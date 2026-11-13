@@ -1,0 +1,564 @@
+---------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+model Event {
+  id                  String    @id @default(uuid())
+  churchId            String
+  church              Church    @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title               String
+  description         String?
+  startsAt            DateTime
+  endsAt              DateTime?
+  locationText        String?
+  locationId          String?
+  location            Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  imageUrl            String?
+  registrationEnabled Boolean   @default(false)
+  registrationUrl     String?
+  isRecurring         Boolean   @default(false) // architecture-ready; recurrence UI is planned
+  recurrenceRule      String?
+  status              String    @default("PUBLISHED") // DRAFT | PUBLISHED | ARCHIVED
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([churchId, status])
+  @@index([churchId, startsAt])
+  @@map("events")
+}
+
+// ---------------------------------------------------------------------------
+// Sermons
+// ---------------------------------------------------------------------------
+
+model SermonSeries {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  imageUrl    String?
+  sermons     Sermon[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([churchId])
+  @@map("sermon_series")
+}
+
+model Sermon {
+  id            String   @id @default(uuid())
+  churchId      String
+  church        Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title         String
+  speakerName   String
+  preachedAt    DateTime
+  description   String?
+  scriptureRef  String?
+  seriesId      String?
+  series        SermonSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  imageUrl      String?
+  videoUrl      String?
+  audioUrl      String?
+  notesUrl      String?
+  status        String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([churchId, status])
+  @@index([churchId, preachedAt])
+  @@map("sermons")
+}
+
+// ---------------------------------------------------------------------------
+// Media library
+// ---------------------------------------------------------------------------
+
+model MediaAsset {
+  id           String   @id @default(uuid())
+  churchId     String
+  church       Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  fileName     String
+  storedName   String   // storage key — never the raw user path
+  mimeType     String
+  kind         String   @default("IMAGE") // IMAGE | DOCUMENT | AUDIO | VIDEO
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  altText      String   @default("")
+  folder       String   @default("")
+  visibility   String   @default("PUBLIC") // PUBLIC | PRIVATE
+  uploadedById String?
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([churchId, kind])
+  @@map("media_assets")
+}
+
+// ---------------------------------------------------------------------------
+// Forms & enquiries
+// ---------------------------------------------------------------------------
+
+// System form types are fixed (contact, prayer, counselling, testimony,
+// registration, followup); each church can enable/disable and edit the
+// presentation copy. Sensitive types (prayer, counselling) are access-
+// restricted and never rendered on the public website.
+model Form {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  type        String   // CONTACT | PRAYER | COUNSELLING | TESTIMONY | REGISTRATION | FOLLOWUP
+  title       String
+  description String?
+  isActive    Boolean  @default(true)
+  successMessage String?
+  submissions  FormSubmission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([churchId, type])
+  @@map("forms")
+}
+
+model FormSubmission {
+  id        String   @id @default(uuid())
+  churchId  String
+  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  formId    String?
+  form      Form?    @relation(fields: [formId], references: [id], onDelete: SetNull)
+  type      String
+  name      String
+  email     String?
+  phone     String?
+  subject   String?
+  message   String
+  isSensitive Boolean @default(false)
+  status    String   @default("NEW") // NEW | IN_PROGRESS | RESOLVED | ARCHIVED
+  // We intentionally do NOT store IP addresses or user agents with
+  // submissions — only the minimal data the church needs to respond.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([churchId, status])
+  @@index([churchId, createdAt])
+  @@map("form_submissions")
+}
+
+// ---------------------------------------------------------------------------
+// Giving
+// ---------------------------------------------------------------------------
+
+model GivingSettings {
+  id              String   @id @default(uuid())
+  churchId        String   @unique
+  church          Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  isEnabled       Boolean  @default(true)
+  // True when the configured destinations are fictional demonstration
+  // content — the public giving page then labels them as such.
+  isDemo          Boolean  @default(false)
+  mode            String   @default("EXTERNAL") // EXTERNAL | BANK | CUSTOM
+  provider        String   @default("NONE")     // NONE | PAYSTACK | STRIPE (external link mode today)
+  externalUrl     String?
+  bankDetails     String?
+  customText      String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@map("giving_settings")
+}
+
+model GivingCategory {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([churchId, slug])
+  @@index([churchId])
+  @@map("giving_categories")
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  churchId   String? // null = platform-level action
+  church     Church?  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  actor      User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail String? // denormalised so the log survives user deletion
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   String? // JSON — minimal, never sensitive payloads
+  createdAt  DateTime @default(now())
+
+  @@index([churchId, createdAt])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
+// OpenChurch — open-source church website platform
+// Multi-tenant relational schema.
+//
+// DESIGN NOTES
+// ------------
+// 1. Tenant isolation: every tenant-owned record carries `churchId` with a
+//    foreign key + index. All data access in the application goes through
+//    server-side service modules (src/lib/tenancy) that force the churchId
+//    scope. When deploying on PostgreSQL/Supabase, the same schema pairs with
+//    Row Level Security policies (see docs/DATABASE.md) for defense in depth.
+// 2. SQLite is used for local development. The schema deliberately avoids
+//    PostgreSQL-only types so it can be pointed at PostgreSQL for production
+//    by switching the datasource provider (documented in docs/DEPLOYMENT.md).
+// 3. Flexible payloads (page sections, navigation items, form fields, audit
+//    metadata) are stored as TEXT containing JSON because Prisma does not
+//    support the `Json` type on SQLite. Typed (de)serialisation helpers live
+//    in src/lib/serialization.ts. On PostgreSQL these columns can be migrated
+//    to `Json` without changing application code beyond the helpers.
+// 4. Draft/publish workflow: `website_pages` stores both `draftSections` and
+//    `publishedSections` snapshots. Publishing promotes the draft snapshot;
+//    rolling back is trivial and the public site never renders a half-saved
+//    state.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Committed default: SQLite — a fresh clone runs with zero configuration
+  // (`bun run dev`), and single-instance self-hosts / the sandbox container
+  // can keep using a single-file database.
+  //
+  // PostgreSQL (Neon, Supabase, RDS, docker-compose) is the recommended
+  // production datasource and is REQUIRED on serverless hosts such as
+  // Vercel, where the ephemeral filesystem cannot persist a SQLite file.
+  // Switch with `npm run use:postgres` / `npm run use:sqlite` (one-line
+  // flip; serverless builds do this automatically — see
+  // scripts/vercel-build.sh). The schema avoids provider-specific types
+  // and stores JSON as TEXT, so no other change is needed. SQLite path
+  // uses `prisma db push`; the PostgreSQL path uses `prisma migrate deploy`
+  // (migrations live in prisma/migrations, PostgreSQL dialect).
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Platform identity & auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String
+  name          String
+  isPlatformAdmin Boolean @default(false)
+  // True only for accounts created by the demonstration seed. Demo accounts
+  // can authenticate ONLY while server-side demonstration mode is enabled
+  // (DEMO_MODE=true); the flag is authoritative — never email heuristics.
+  isDemo        Boolean   @default(false)
+  // Recorded legal acceptance (version string, e.g. "2026-11"), set at
+  // registration and when the user re-accepts an updated policy.
+  acceptedTermsVersion String?
+  acceptedTermsAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships   ChurchMembership[]
+  sessions      Session[]
+  passwordResetTokens PasswordResetToken[]
+  pagesCreated  WebsitePage[]      @relation("PageCreator")
+  pagesUpdated  WebsitePage[]      @relation("PageUpdater")
+  mediaUploaded MediaAsset[]
+  auditLogs     AuditLog[]
+
+  @@map("user_accounts")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Single-use, time-limited password reset tokens. Only a SHA-256 hash of
+/// the token is stored — a database leak cannot expose usable reset links.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Tenants (churches)
+// ---------------------------------------------------------------------------
+
+model Church {
+  id           String    @id @default(uuid())
+  slug         String    @unique
+  name         String
+  denomination String?
+  country      String    @default("NG")
+  region       String?
+  city         String?
+  address      String?
+  postalCode   String?
+  phone        String?
+  email        String?
+  timezone     String    @default("UTC")
+  currency     String    @default("USD")
+  dateFormat   String    @default("medium")
+  description  String?
+  foundedYear  Int?
+  // Website lifecycle
+  isPublished  Boolean   @default(false)
+  publishedAt  DateTime?
+  onboardingCompleted Boolean @default(false)
+  onboardingStep Int     @default(1)
+  status       String    @default("ACTIVE") // ACTIVE | SUSPENDED
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  settings       ChurchSettings?
+  giving         GivingSettings?
+  domains        ChurchDomain[]
+  memberships    ChurchMembership[]
+  pages          WebsitePage[]
+  navigation     NavigationMenu[]
+  ministries     Ministry[]
+  leaders        Leader[]
+  locations      Location[]
+  services       Service[]
+  events         Event[]
+  sermonSeries   SermonSeries[]
+  sermons        Sermon[]
+  media          MediaAsset[]
+  forms          Form[]
+  submissions    FormSubmission[]
+  givingCategories GivingCategory[]
+  auditLogs      AuditLog[]
+
+  @@index([status])
+  @@map("churches")
+}
+
+/// Custom domains / subdomains. Verification & DNS wiring is an extensible,
+/// deployment-specific feature — see lib/tenancy/resolver.ts and
+/// docs/DEPLOYMENT.md. Records stored here power host-based routing where the
+/// operator enables it.
+model ChurchDomain {
+  id               String   @id @default(uuid())
+  churchId         String
+  church           Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  domain           String   @unique
+  type             String   @default("CUSTOM") // SUBDOMAIN | CUSTOM
+  isVerified       Boolean  @default(false)
+  verificationToken String?
+  createdAt        DateTime @default(now())
+
+  @@index([churchId])
+  @@map("church_domains")
+}
+
+model ChurchMembership {
+  id        String   @id @default(uuid())
+  churchId  String
+  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // PLATFORM_ADMIN is global (on User). Church roles:
+  // OWNER | ADMIN | EDITOR | AUTHOR
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([churchId, userId])
+  @@index([userId])
+  @@map("church_memberships")
+}
+
+model ChurchSettings {
+  id          String   @id @default(uuid())
+  churchId    String   @unique
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+
+  // Branding & theme
+  themeKey    String   @default("modern")
+  primaryColor   String @default("#0F5C4E")
+  secondaryColor String @default("#B45309")
+  fontKey     String   @default("sans")
+  logoUrl     String?
+  heroImageUrl String?
+
+  // Footer & social
+  footerText      String?
+  copyrightLine   String?
+  socialFacebook  String?
+  socialInstagram String?
+  socialYoutube   String?
+  socialX         String?
+  socialTiktok    String?
+  whatsappNumber  String?
+
+  // SEO defaults
+  defaultSeoTitle       String?
+  defaultSeoDescription String?
+
+  // Extras
+  mapEmbedUrl  String?
+  announcementText   String?
+  announcementEnabled Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("church_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Website: pages, sections, navigation
+// ---------------------------------------------------------------------------
+
+model WebsitePage {
+  id        String   @id @default(uuid())
+  churchId  String
+  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title     String
+  slug      String   // path segment(s) under the church site, "" = homepage
+  isHomePage Boolean @default(false)
+  status    String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  seoTitle  String?
+  seoDescription String?
+  draftSections      String? // JSON: SectionInstance[]
+  publishedSections  String? // JSON: SectionInstance[]
+  publishedAt DateTime?
+  createdById String?
+  createdBy   User?   @relation("PageCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   User?   @relation("PageUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([churchId, slug])
+  @@index([churchId, status])
+  @@map("website_pages")
+}
+
+model NavigationMenu {
+  id        String   @id @default(uuid())
+  churchId  String
+  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  location  String   // HEADER | FOOTER
+  items     String   // JSON: NavItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([churchId, location])
+  @@map("navigation_menus")
+}
+
+// ---------------------------------------------------------------------------
+// Church structure
+// ---------------------------------------------------------------------------
+
+model Ministry {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  description String?
+  leaderName  String?
+  meetingTime String?
+  location    String?
+  imageUrl    String?
+  status      String   @default("PUBLISHED") // DRAFT | PUBLISHED | ARCHIVED
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([churchId, slug])
+  @@index([churchId, status])
+  @@map("ministries")
+}
+
+model Leader {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name        String
+  title       String
+  bio         String?
+  imageUrl    String?
+  email       String?
+  phone       String?
+  status      String   @default("PUBLISHED")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([churchId, status])
+  @@map("leaders")
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  churchId  String
+  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name      String
+  address   String?
+  city      String?
+  country   String?
+  mapUrl    String?
+  isPrimary Boolean  @default(false)
+  services  Service[]
+  events    Event[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([churchId])
+  @@map("locations")
+}
+
+model Service {
+  id         String   @id @default(uuid())
+  churchId   String
+  church     Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  name       String
+  dayOfWeek  Int // 0=Sunday … 6=Saturday
+  startTime  String // "09:00"
+  endTime    String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([churchId])
+  @@map("services")
+}
+
+// ------
