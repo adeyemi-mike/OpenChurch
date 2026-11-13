@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openchurch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_DB: openchurch
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U openchurch -d openchurch']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # For PostgreSQL, switch prisma/schema.prisma provider to "postgresql"
+      # before building (see docs/DEPLOYMENT.md). The default build runs on
+      # SQLite with a volume — fine for small single-server installations.
+      DATABASE_URL: ${DATABASE_URL:-file:/app/storage/custom.db}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-PATH}
+      STORAGE_PATH: /app/storage/uploads
+    ports:
+      - '3000:3000'
+    volumes:
+      - storage:/app/storage
+
+volumes:
+  pgdata:
+  storage:
