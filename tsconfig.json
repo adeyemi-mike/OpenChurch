@@ -38,6 +38,7 @@
   ],
   "exclude": [
     "node_modules",
+    "download/verified-files",
     "examples",
     "skills",
     "mini-services",
