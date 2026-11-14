@@ -92,6 +92,10 @@
     "vitest": "^5.1.0"
   },
   "trustedDependencies": [
+    "@prisma/client",
+    "@prisma/engines",
+    "prisma",
+    "sharp",
     "unrs-resolver"
   ]
 }

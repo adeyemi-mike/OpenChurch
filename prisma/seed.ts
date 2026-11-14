@@ -216,6 +216,7 @@ async function main() {
   const grace = await db.church.create({
     data: {
       slug: 'grace-community',
+      isDemo: true,
       name: 'Grace Community Church',
       denomination: 'Non-denominational',
       country: 'NG',
@@ -599,6 +600,7 @@ async function main() {
   const emmanuel = await db.church.create({
     data: {
       slug: 'emmanuel-parish',
+      isDemo: true,
       name: 'Emmanuel Parish Church',
       denomination: 'Church of England',
       country: 'GB',
@@ -807,7 +809,15 @@ async function main() {
     ],
   }
 
-  for (const page of [emmHome, emmAbout, emmContact, emmEventsPage, emmGive]) {
+  const emmSermonsPage = {
+    title: 'Sermons', slug: 'sermons', isHomePage: false,
+    seoTitle: 'Sermons', seoDescription: 'Sermons and homilies from Emmanuel Parish Church.',
+    sections: [
+      { id: randomUUID(), type: 'sermons' as const, enabled: true, title: 'Sermons & homilies', subtitle: '', background: 'plain' as const, maxItems: 9, cta: { label: '', href: '' } },
+    ],
+  }
+
+  for (const page of [emmHome, emmAbout, emmContact, emmEventsPage, emmGive, emmSermonsPage]) {
     const sections = JSON.stringify(page.sections)
     await db.websitePage.create({
       data: {
@@ -831,6 +841,7 @@ async function main() {
     { label: 'Home', href: '/' },
     { label: 'About', href: '/about' },
     { label: 'Events', href: '/events' },
+    { label: 'Sermons', href: '/sermons' },
     { label: 'Give', href: '/give' },
     { label: 'Contact', href: '/contact' },
   ]

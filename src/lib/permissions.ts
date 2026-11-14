@@ -42,6 +42,9 @@ export type Permission =
   | 'enquiries:view_sensitive'
   // Giving configuration
   | 'giving:manage'
+  // Custom domains (routing/ownership is church-level infrastructure:
+  // owners and admins manage; editors/authors must not)
+  | 'domains:manage'
   // Audit trail
   | 'activity:view'
 
@@ -65,6 +68,7 @@ const MIN_ROLE: Record<Permission, ChurchRole> = {
   'enquiries:view': 'EDITOR',
   'enquiries:view_sensitive': 'OWNER',
   'giving:manage': 'OWNER',
+  'domains:manage': 'ADMIN',
   'activity:view': 'ADMIN',
 }
 

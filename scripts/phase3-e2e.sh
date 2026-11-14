@@ -148,7 +148,27 @@ echo "=== 9. Navigation validation ==="
 ST=$(api /tmp/p3-grace.jar PUT "/api/dashboard/grace-community/navigation" '{"location":"HEADER","items":[{"label":"QA Nav","href":"/about"}]}' >/dev/null; echo "$API_STATUS")
 checkrange "navigation update accepted (owner)" "$ST" "20[04]"
 
-echo "=== 10. Platform admin protection ==="
+echo "=== 10. Custom domains: add / honest-verify / race / remove ==="
+DOM_BODY=$(api /tmp/p3-grace.jar POST "/api/dashboard/grace-community/domains" '{"domain":"qa-domain-test.example.org"}')
+DOM_ID=$(echo "$DOM_BODY" | grep -oE '"id":"[0-9a-f-]{36}"' | head -1 | cut -d'"' -f4)
+checkrange "domain added (PENDING with TXT instructions)" "$DOM_ID" "[0-9a-f-]{36}"
+contains "TXT record instructions returned" "$DOM_BODY" "_openchurch-verify.qa-domain-test.example.org" yes
+ST=$(api /tmp/p3-grace.jar POST "/api/dashboard/grace-community/domains/$DOM_ID" '{"action":"verify"}' >/dev/null; echo "$API_STATUS")
+check "verify without DNS stays pending (honest failure) (200)" "$ST" "200"
+VBODY=$(cat /tmp/p3-body.json)
+contains "honest failure reason present" "$VBODY" "No TXT record" yes
+RACE=$(api /tmp/p3-emma.jar POST "/api/dashboard/emmanuel-parish/domains" '{"domain":"qa-domain-test.example.org"}')
+contains "cross-tenant claim blocked (CLAIM_PENDING)" "$RACE" "CLAIM_PENDING" yes
+BAD=$(api /tmp/p3-grace.jar POST "/api/dashboard/grace-community/domains" '{"domain":"not a domain"}')
+contains "invalid domain rejected" "$BAD" "INVALID_DOMAIN" yes
+BAD2=$(api /tmp/p3-grace.jar POST "/api/dashboard/grace-community/domains" '{"domain":"someone.vercel.app"}')
+contains "hosting-suffix domain rejected" "$BAD2" "INVALID_DOMAIN" yes
+ST=$(api /tmp/p3-author.jar POST "/api/dashboard/grace-community/domains" '{"domain":"author-try.example.org"}' >/dev/null; echo "$API_STATUS")
+check "author cannot manage domains (403)" "$ST" "403"
+ST=$(api /tmp/p3-grace.jar DELETE "/api/dashboard/grace-community/domains/$DOM_ID" >/dev/null; echo "$API_STATUS")
+check "domain removed by owner" "$ST" "200"
+
+echo "=== 11. Platform admin protection ==="
 ST=$(api /tmp/p3-grace.jar GET "/api/admin" >/dev/null; echo "$API_STATUS")
 check "church owner blocked from platform admin API" "$ST" "403"
 

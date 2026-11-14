@@ -56,7 +56,7 @@ The honest list. "Implemented" means it exists in this codebase, is wired to the
 
 | Feature | Status & existing hook |
 | --- | --- |
-| Automated DNS verification for custom domains | `church_domains` table + resolver exist; no challenge flow — operators set `isVerified` |
+| Automated DNS verification for custom domains | **Shipped**: TXT challenge (`_openchurch-verify.<domain>`), hashed tokens with expiry, Vercel hosting assignment via API (or honest manual mode), primary-domain canonicals, proxy host routing — see docs/DEPLOYMENT.md → "Custom domains" |
 | Direct Paystack/Stripe API giving | Link-based giving works; provider field + secure server-side design documented (SECURITY.md) |
 | Recurring events UI | `events.isRecurring` / `recurrenceRule` columns exist; no recurrence editor yet |
 | Email delivery (invites, notifications) | Members are added by existing account email; SMTP env placeholder reserved |

@@ -8,6 +8,9 @@ import { loadSectionData } from '@/lib/sections/data'
 import { fromJson } from '@/lib/serialization'
 import { absoluteMediaUrl, absoluteUrl, churchSiteUrl, getPublicOrigin } from '@/lib/url'
 import { Church as ChurchIcon } from 'lucide-react'
+import type { SectionsList } from '@/lib/sections/types'
+import { sectionHasTemplateInstructions } from '@/lib/sections/template'
+import { resolveCanonicalOrigin, churchCanonicalUrl, getActiveDomainForHost } from '@/lib/domains/service'
 
 type Params = {
   params: Promise<{ slug: string; path?: string[] }>
@@ -21,6 +24,45 @@ async function loadChurch(slug: string) {
   })
 }
 
+/**
+ * Built-in sermon archive fallback.
+ *
+ * ROUTING INVARIANT: a church with published sermons must always have an
+ * accessible archive route, even when no dedicated "sermons" page record
+ * exists (e.g. a church that only ever created starter pages, or whose
+ * sermons page is still a draft). The dedicated page record wins when it
+ * exists and is published; otherwise this synthetic archive renders.
+ * Churches with NO published sermons keep the 404 — no artificial archive.
+ */
+async function sermonArchiveFallback(churchId: string): Promise<SectionsList | null> {
+  const published = await db.sermon.count({ where: { churchId, status: 'PUBLISHED' } })
+  if (published === 0) return null
+  return [
+    {
+      id: 'sermon-archive-fallback',
+      type: 'sermons',
+      enabled: true,
+      title: 'Sermons',
+      subtitle: '',
+      background: 'plain',
+      maxItems: 24,
+      cta: { label: '', href: '' },
+    },
+  ]
+}
+
+async function resolvePublicPage(churchId: string, pagePath: string) {
+  const page = await db.websitePage.findFirst({
+    where: { churchId, slug: pagePath, status: 'PUBLISHED' },
+  })
+  if (page) return { page, fallbackSections: null as SectionsList | null }
+  if (pagePath === 'sermons') {
+    const fallbackSections = await sermonArchiveFallback(churchId)
+    if (fallbackSections) return { page: null, fallbackSections }
+  }
+  return { page: null, fallbackSections: null }
+}
+
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug, path } = await params
   const [church, h] = await Promise.all([loadChurch(slug), headers()])
@@ -29,26 +71,34 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     notFound()
   }
   const origin = getPublicOrigin(h)
-  const canonicalPath = churchSiteUrl(origin, slug, (path ?? []).join('/'))
+  const requestHost = h.get('host')
+  // Canonical strategy: the church's primary custom domain wins (even when
+  // the page is visited via the platform slug route) so the two reachable
+  // URLs never compete for indexation. Without a custom domain the platform
+  // origin is canonical, as before.
+  const canon = await resolveCanonicalOrigin(church.id, origin, requestHost)
+  const canonicalPath = churchCanonicalUrl(canon, slug, (path ?? []).join('/'))
   const pagePath = (path ?? []).join('/')
-  const page = await db.websitePage.findFirst({
-    where: { churchId: church.id, slug: pagePath, status: 'PUBLISHED' },
-  })
-  if (!page) {
+  const { page, fallbackSections } = await resolvePublicPage(church.id, pagePath)
+  if (!page && !fallbackSections) {
     // notFound() HERE (not in the page component): generateMetadata is
     // awaited before the response head is flushed, so the visitor and
     // crawlers get a real HTTP 404 instead of a streamed soft-200.
     notFound()
   }
-  const title = page.seoTitle || (page.isHomePage ? church.settings.defaultSeoTitle || church.name : `${page.title} — ${church.name}`)
+  const fallbackTitle = fallbackSections ? 'Sermons' : null
+  const title =
+    page?.seoTitle ||
+    fallbackTitle ||
+    (page?.isHomePage ? church.settings.defaultSeoTitle || church.name : `${page?.title} — ${church.name}`)
   // Church sites own their <title> fully — never suffix the platform brand.
   const absoluteTitle = title.includes(church.name) ? title : `${title} — ${church.name}`
   const description =
-    page.seoDescription || church.settings.defaultSeoDescription || church.description || undefined
+    page?.seoDescription || church.settings.defaultSeoDescription || church.description || undefined
   // Social sharing image: the church's configured image, resolved to an
   // absolute public URL; falls back to the platform default card.
   const image =
-    absoluteMediaUrl(origin, church.settings.heroImageUrl || church.settings.logoUrl) ??
+    absoluteMediaUrl(canon.origin, church.settings.heroImageUrl || church.settings.logoUrl) ??
     absoluteUrl(origin, '/og-default.png')
   return {
     title: { absolute: absoluteTitle },
@@ -69,7 +119,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       images: [image],
     },
     robots: church.isPublished
-      ? { index: page.status === 'PUBLISHED', follow: true }
+      ? { index: (page?.status ?? 'PUBLISHED') === 'PUBLISHED', follow: true }
       : { index: false, follow: false },
   }
 }
@@ -92,11 +142,9 @@ export default async function ChurchSitePage({ params, searchParams }: Params) {
   }
 
   const pagePath = (path ?? []).join('/')
-  const page = await db.websitePage.findFirst({
-    where: { churchId: church.id, slug: pagePath, status: 'PUBLISHED' },
-  })
+  const { page, fallbackSections } = await resolvePublicPage(church.id, pagePath)
 
-  if (!page) {
+  if (!page && !fallbackSections) {
     // Real HTTP 404 (not a soft-200): an existing church with a bad page
     // path must not be indexable as duplicate content.
     notFound()
@@ -120,7 +168,17 @@ export default async function ChurchSitePage({ params, searchParams }: Params) {
     db.navigationMenu.findUnique({ where: { churchId_location: { churchId: church.id, location: 'FOOTER' } } }),
   ])
 
-  const sections = parseSections(page.publishedSections)
+  const sections = parseSections(page?.publishedSections ?? JSON.stringify(fallbackSections))
+  // Public pages never even SERIALISE template-instruction sections (filtered
+  // before render — absent from both the DOM and the RSC flight payload).
+  // Draft preview (/preview) keeps them and the renderer shows an editor-facing
+  // hint instead; the renderer also guards independently (defence in depth).
+  const publicSections = sections.filter((s) => !sectionHasTemplateInstructions(s))
+
+  // Serving-domain detection: when the request host is one of this church's
+  // ACTIVE domains, internal links stay root-relative (clean URLs).
+  const pageHeaders = await headers()
+  const servingDomain = await getActiveDomainForHost(church.id, pageHeaders.get('host'))
 
   // Structured data (schema.org Church)
   const jsonLd = {
@@ -168,12 +226,13 @@ export default async function ChurchSitePage({ params, searchParams }: Params) {
         }}
         data={data}
         preview={false}
-        sections={sections}
+        servingDomain={servingDomain}
+        sections={publicSections}
         path={path ?? []}
         sermonQuery={sermonQuery}
         sermonSeriesId={sermonSeriesId}
         // Every non-home section page gets exactly one accessible h1.
-        pageHeading={page.isHomePage ? undefined : page.title}
+        pageHeading={page ? (page.isHomePage ? undefined : page.title) : 'Sermons'}
       />
     </>
   )

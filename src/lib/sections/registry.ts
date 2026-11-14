@@ -378,6 +378,19 @@ export function createSection(type: SectionType): SectionInstance {
 // Starter templates
 // ---------------------------------------------------------------------------
 
+/**
+ * Editor-instruction strings used in starter/onboarding page sections.
+ * They are guidance FOR THE CHURCH ADMINISTRATOR ("write your intro here"),
+ * never visitor-facing content. Publishing-readiness validation treats them
+ * as blocking issues, and the public renderer suppresses sections that still
+ * contain them (defence in depth for pages published before validation
+ * existed). Keep in sync with the defaults below.
+ */
+export const TEMPLATE_PLACEHOLDERS: readonly string[] = [
+  'Share a short, warm introduction to your church here',
+  'Write the story of your church',
+]
+
 export function defaultHomepageSections(churchName: string): SectionsList {
   return [
     { ...createSection('hero'), heading: `Welcome to ${churchName}`, subheading: 'Join us this Sunday — there is a seat for you.' } as SectionInstance,

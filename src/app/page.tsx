@@ -21,6 +21,8 @@ import { Button } from '@/components/ui/button'
 import { HeroMockup } from '@/components/platform/hero-mockup'
 import { THEMES } from '@/lib/themes/registry'
 import { getSessionUser } from '@/lib/auth/session'
+import { isDemoModeEnabled, DEMO_PASSWORD_HINT } from '@/lib/demo-mode'
+import { db } from '@/lib/db'
 
 // Public repository link (set NEXT_PUBLIC_REPO_URL when the project is published).
 const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || null
@@ -139,6 +141,62 @@ const THEME_SWATCHES: Record<string, { colors: string[]; cta: string }> = {
 export default async function LandingPage() {
   const user = await getSessionUser()
 
+  /*
+   * Showcase churches are real tenant records from THIS deployment's
+   * database — never hardcoded names. A deployment without seeded demo
+   * data (e.g. a real single-church install) shows its actual church;
+   * a deployment with no published churches hides the section entirely.
+   * This guarantees every marketing link resolves (no advertised 404s).
+   *
+   * Demonstration accounts are surfaced only while server-side demo mode
+   * is enabled AND the church is flagged isDemo.
+   */
+  const demoMode = isDemoModeEnabled()
+  const churches = await db.church.findMany({
+    where: {
+      isPublished: true,
+      status: 'ACTIVE',
+      // Never advertise demo tenants on a deployment that disabled demo mode.
+      ...(demoMode ? {} : { isDemo: false }),
+    },
+    include: { settings: true },
+    orderBy: [{ isDemo: 'desc' }, { publishedAt: 'asc' }],
+    take: 2,
+  })
+  const showcase = await Promise.all(
+    churches.map(async (c) => {
+      const [sermons, events, ministries] = await Promise.all([
+        db.sermon.count({ where: { churchId: c.id, status: 'PUBLISHED' } }),
+        db.event.count({ where: { churchId: c.id, status: 'PUBLISHED' } }),
+        db.ministry.count({ where: { churchId: c.id, status: 'PUBLISHED' } }),
+      ])
+      let demoLogin: string | null = null
+      if (demoMode && c.isDemo) {
+        const owner = await db.churchMembership.findFirst({
+          where: { churchId: c.id, role: 'OWNER', user: { isDemo: true } },
+          select: { user: { select: { email: true } } },
+        })
+        demoLogin = owner?.user.email ?? null
+      }
+      const theme = THEMES.find((t) => t.key === c.settings?.themeKey)
+      const location = [c.city, c.country].filter(Boolean).join(', ')
+      return {
+        href: `/church/${c.slug}`,
+        name: c.name,
+        meta: [location, theme ? `${theme.name} theme` : null].filter(Boolean).join(' · '),
+        colors: [c.settings?.primaryColor || '#0F5C4E', c.settings?.secondaryColor || '#B45309'] as [string, string],
+        points: [
+          sermons > 0 ? `${sermons} published sermon${sermons === 1 ? '' : 's'}` : 'Section-driven pages',
+          events > 0 ? `${events} upcoming event${events === 1 ? '' : 's'}` : 'Events & service schedule',
+          ministries > 0 ? `${ministries} ministries` : 'Custom branding & themes',
+        ],
+        login: demoLogin,
+      }
+    })
+  )
+  const hasShowcase = showcase.length > 0
+  const demoShowcase = demoMode && showcase.some((s) => s.login)
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header */}
@@ -153,7 +211,9 @@ export default async function LandingPage() {
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground" aria-label="Main">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#themes" className="hover:text-foreground transition-colors">Themes</a>
-            <a href="#demo" className="hover:text-foreground transition-colors">Live demo</a>
+            {hasShowcase && (
+              <a href="#demo" className="hover:text-foreground transition-colors">Live site{showcase.length > 1 ? 's' : ''}</a>
+            )}
             <a href="#opensource" className="hover:text-foreground transition-colors">Open source</a>
           </nav>
           <div className="flex items-center gap-2">
@@ -200,7 +260,9 @@ export default async function LandingPage() {
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
-                <a href="#demo">Explore the live demo</a>
+                <a href={hasShowcase ? '#demo' : '#features'}>
+                  {hasShowcase ? 'See a live church site' : 'Explore the features'}
+                </a>
               </Button>
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
@@ -331,45 +393,38 @@ export default async function LandingPage() {
           </div>
         </section>
 
-        {/* Demo */}
+        {/* Live sites — real tenant records from this deployment */}
+        {hasShowcase && (
         <section id="demo" className="py-20 sm:py-24 border-t">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">
             <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">See it in action</p>
-              <h2 className="mt-3 text-3xl sm:text-4xl font-semibold tracking-tight">Two demo churches, live</h2>
+              <h2 className="mt-3 text-3xl sm:text-4xl font-semibold tracking-tight">
+                {demoShowcase
+                  ? showcase.length > 1 ? 'Two demo churches, live' : 'A demo church, live'
+                  : showcase.length > 1 ? 'Churches live on this platform' : 'A church, live on this platform'}
+              </h2>
               <p className="mt-3 text-muted-foreground">
-                Both sites below are generated by the same platform — different themes, colours,
-                content and countries. Sign in to their dashboards to see the admin side
-                (demo data, clearly labelled).
+                {demoShowcase ? (
+                  <>Every site below is generated by the same platform — different themes,
+                  colours, content and countries. Sign in to their dashboards to see the admin
+                  side (demo data, clearly labelled).</>
+                ) : (
+                  <>Real churches running on this installation — each with its own theme,
+                  content, media and dashboard. The same platform can host yours.</>
+                )}
               </p>
             </div>
-            <div className="mt-10 grid gap-6 md:grid-cols-2">
-              {[
-                {
-                  href: '/church/grace-community',
-                  name: 'Grace Community Church',
-                  meta: 'Lagos, Nigeria · Contemporary Vibrant theme',
-                  colors: ['#0B6E4F', '#D97706'],
-                  points: ['Full section-driven homepage', 'Sermons, events & ministries', 'Paystack-style giving setup'],
-                  login: 'owner@grace.demo',
-                },
-                {
-                  href: '/church/emmanuel-parish',
-                  name: 'Emmanuel Parish Church',
-                  meta: 'Manchester, UK · Traditional Elegant theme',
-                  colors: ['#7A1F2B', '#B08D57'],
-                  points: ['Traditional service schedule', 'Gallery & leadership sections', 'Bank-transfer giving setup'],
-                  login: 'owner@emmanuel.demo',
-                },
-              ].map((d) => (
-                <article key={d.href} className="rounded-2xl border overflow-hidden bg-background">
+            <div className={`mt-10 grid gap-6 ${showcase.length > 1 ? 'md:grid-cols-2' : 'md:grid-cols-1'}`}>
+              {showcase.map((d) => (
+                <article key={d.href} className="rounded-2xl border overflow-hidden bg-background md:max-w-xl">
                   <div className="h-2 flex" aria-hidden>
                     <span className="flex-1" style={{ background: d.colors[0] }} />
                     <span className="flex-1" style={{ background: d.colors[1] }} />
                   </div>
                   <div className="p-6">
                     <h3 className="font-semibold text-lg">{d.name}</h3>
-                    <p className="text-sm text-muted-foreground mt-0.5">{d.meta}</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">{d.meta || 'Built with OpenChurch'}</p>
                     <ul className="mt-4 space-y-2">
                       {d.points.map((p) => (
                         <li key={p} className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -384,19 +439,24 @@ export default async function LandingPage() {
                           Visit the website <ArrowRight className="size-3.5" aria-hidden />
                         </Link>
                       </Button>
-                      <span className="text-xs text-muted-foreground">
-                        Dashboard: <code className="rounded bg-muted px-1.5 py-0.5">{d.login}</code>
-                      </span>
+                      {d.login && (
+                        <span className="text-xs text-muted-foreground">
+                          Dashboard: <code className="rounded bg-muted px-1.5 py-0.5">{d.login}</code>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </article>
               ))}
             </div>
-            <p className="mt-6 text-xs text-muted-foreground">
-              Demo password for all accounts: <code className="rounded bg-muted px-1.5 py-0.5">Demo1234!</code> — demo content is fictional and labelled as such.
-            </p>
+            {demoShowcase && (
+              <p className="mt-6 text-xs text-muted-foreground">
+                Demo password for all accounts: <code className="rounded bg-muted px-1.5 py-0.5">{DEMO_PASSWORD_HINT}</code> — demo content is fictional and labelled as such.
+              </p>
+            )}
           </div>
         </section>
+        )}
 
         {/* Open source */}
         <section id="opensource" className="border-t bg-primary text-primary-foreground">
@@ -465,11 +525,12 @@ export default async function LandingPage() {
           </div>
           <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground" aria-label="Footer">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
-            <a href="#demo" className="hover:text-foreground transition-colors">Demo</a>
+            {hasShowcase && <a href="#demo" className="hover:text-foreground transition-colors">Live site{showcase.length > 1 ? 's' : ''}</a>}
             <Link href="/login" className="hover:text-foreground transition-colors">Sign in</Link>
             <Link href="/register" className="hover:text-foreground transition-colors">Get started</Link>
-            <Link href="/church/grace-community" className="hover:text-foreground transition-colors">Grace demo</Link>
-            <Link href="/church/emmanuel-parish" className="hover:text-foreground transition-colors">Emmanuel demo</Link>
+            {showcase.map((s) => (
+              <Link key={s.href} href={s.href} className="hover:text-foreground transition-colors">{s.name}</Link>
+            ))}
           </nav>
           <p className="text-xs text-muted-foreground">MIT licensed · Built for the global church</p>
         </div>

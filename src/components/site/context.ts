@@ -47,6 +47,13 @@ export type SiteRenderContext = {
   sermonSeriesId?: string
   /** True inside the authenticated builder preview. */
   preview: boolean
+  /**
+   * The custom domain this page is being SERVED under (e.g. "www.gracecommunity.org"),
+   * or null when serving from the platform origin. When set, church-internal
+   * links stay root-relative ("/about") instead of the /church/<slug> prefix,
+   * so visitors on the church's own domain see clean URLs.
+   */
+  servingDomain?: string | null
 }
 
 export type NavItem = { label: string; href: string }
@@ -65,12 +72,20 @@ export function siteStyleVars(ctx: SiteRenderContext): React.CSSProperties {
   return vars as React.CSSProperties
 }
 
-/** Resolve a nav href ("/about", "/contact") to the church site URL. */
+/** Resolve a nav href ("/about", "/contact") to the church site URL.
+ *
+ * Under the church's own custom domain the href stays root-relative — the
+ * proxy already routes that host to this church, so "/about" is both correct
+ * and clean. On the platform origin (or in preview) the /church/<slug>
+ * prefix keeps the URL unambiguous. External/mailto/tel hrefs pass through. */
 export function siteHref(ctx: SiteRenderContext, href: string): string {
   if (/^(https?:)?\/\//i.test(href) || href.startsWith('mailto:') || href.startsWith('tel:')) {
     return href
   }
   const clean = href.startsWith('/') ? href : `/${href}`
+  if (ctx.servingDomain) {
+    return clean
+  }
   return `/church/${ctx.church.slug}${clean === '/' ? '' : clean}`
 }
 

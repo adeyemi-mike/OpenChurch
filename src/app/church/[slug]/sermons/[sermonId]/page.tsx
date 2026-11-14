@@ -8,6 +8,7 @@ import { fromJson } from '@/lib/serialization'
 import { absoluteMediaUrl, absoluteUrl, churchSiteUrl, getPublicOrigin } from '@/lib/url'
 import { toYouTubeEmbed } from '@/components/site/context'
 import { Markdown } from '@/components/site/markdown'
+import { resolveCanonicalOrigin, churchCanonicalUrl, getActiveDomainForHost } from '@/lib/domains/service'
 import { CalendarDays, Clock3, Download, UserRound, BookOpen, ArrowLeft } from 'lucide-react'
 
 type Params = { params: Promise<{ slug: string; sermonId: string }> }
@@ -34,7 +35,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   if (!found) notFound()
   const { church, settings, sermon } = found
   const origin = getPublicOrigin(h)
-  const canonical = churchSiteUrl(origin, slug, `sermons/${sermon.id}`)
+  // Canonical strategy matches the church pages: primary custom domain wins
+  // so the sermon detail URL is stable across platform/custom-domain access.
+  const canon = await resolveCanonicalOrigin(church.id, origin, h.get('host'))
+  const canonical = churchCanonicalUrl(canon, slug, `sermons/${sermon.id}`)
   const title = `${sermon.title} — ${church.name}`
   const description =
     sermon.description?.slice(0, 180) ??
@@ -43,7 +47,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       .join(' · ') ||
       `A sermon from ${church.name}.`)
   const image =
-    absoluteMediaUrl(origin, sermon.imageUrl || settings.heroImageUrl || settings.logoUrl) ??
+    absoluteMediaUrl(canon.origin, sermon.imageUrl || settings.heroImageUrl || settings.logoUrl) ??
     absoluteUrl(origin, '/og-default.png')
   return {
     title: { absolute: title },
@@ -66,6 +70,9 @@ export default async function SermonDetailPage({ params }: Params) {
   const found = await loadSermon(slug, sermonId)
   if (!found) notFound()
   const { church, settings, sermon } = found
+
+  const h = await headers()
+  const servingDomain = await getActiveDomainForHost(church.id, h.get('host'))
 
   const [headerNav, footerNav] = await Promise.all([
     db.navigationMenu.findUnique({
@@ -135,11 +142,12 @@ export default async function SermonDetailPage({ params }: Params) {
         enabledForms: {},
       }}
       preview={false}
+      servingDomain={servingDomain}
       sections={[]}
     >
       <article className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
         <Link
-          href={`/church/${church.slug}/sermons`}
+          href={servingDomain ? '/sermons' : `/church/${church.slug}/sermons`}
           className="inline-flex items-center gap-1.5 text-sm font-medium opacity-70 hover:opacity-100"
         >
           <ArrowLeft className="size-4" aria-hidden /> All sermons

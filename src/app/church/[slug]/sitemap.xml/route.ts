@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
-import { getPublicOrigin, churchSiteUrl } from '@/lib/url'
+import { getPublicOrigin } from '@/lib/url'
+import { resolveCanonicalOrigin, churchCanonicalUrl } from '@/lib/domains/service'
 
 /** XML sitemap for a church website (published, public content only).
  *
@@ -40,10 +41,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     }),
   ])
 
-  // Canonical origin: explicit configuration first, then a plausible public
-  // request origin. Never localhost in production deployments.
-  const origin = getPublicOrigin(req.headers)
-  const base = churchSiteUrl(origin, church.slug)
+  // Canonical origin: the church's ACTIVE PRIMARY custom domain when set
+  // (so the sitemap advertises custom-domain URLs), else the platform
+  // origin with the church slug path. Never localhost in production.
+  const canon = await resolveCanonicalOrigin(church.id, getPublicOrigin(req.headers), req.headers.get('host'))
+  const base = churchCanonicalUrl(canon, church.slug)
+  // The sermon ARCHIVE route must be listed whenever it exists: either as a
+  // published CMS page (covered by `pages` above) or as the built-in
+  // fallback archive (published sermons without a dedicated page record).
+  const archiveCoveredByPage = pages.some((p) => p.slug === 'sermons')
+  const archiveFallback = !archiveCoveredByPage && sermons.length > 0
   const urls = [
     { loc: base, lastmod: new Date().toISOString().slice(0, 10) },
     ...pages
@@ -52,6 +59,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
         loc: `${base}/${p.slug}`,
         lastmod: p.updatedAt.toISOString().slice(0, 10),
       })),
+    ...(archiveFallback
+      ? [{ loc: `${base}/sermons`, lastmod: new Date().toISOString().slice(0, 10) }]
+      : []),
     ...sermons.map((s) => ({
       loc: `${base}/sermons/${s.id}`,
       lastmod: s.updatedAt.toISOString().slice(0, 10),

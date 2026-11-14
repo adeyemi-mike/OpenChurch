@@ -45,6 +45,8 @@ type RenderInput = {
   sermonQuery?: string
   sermonSeriesId?: string
   preview: boolean
+  /** Custom domain the page is served under (null on the platform origin). */
+  servingDomain?: string | null
 }
 
 /**
@@ -57,6 +59,7 @@ export function ChurchSite({
   nav,
   data,
   preview,
+  servingDomain,
   sections,
   path,
   sermonQuery,
@@ -83,6 +86,7 @@ export function ChurchSite({
     sermonQuery,
     sermonSeriesId,
     preview,
+    servingDomain: servingDomain ?? null,
   }
 
   return (

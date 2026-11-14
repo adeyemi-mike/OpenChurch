@@ -1,5 +1,6 @@
 import type { SectionInstance, SectionsList, SectionPageData } from '@/lib/sections/types'
 import type { SiteRenderContext } from '@/components/site/context'
+import { sectionHasTemplateInstructions } from '@/lib/sections/template'
 import {
   HeroRenderer,
   TextImageRenderer,
@@ -80,7 +81,16 @@ export function SectionsRenderer({
   hasChildren?: boolean
 }) {
   const visible = sections.filter((s) => s.enabled)
-  if (visible.length === 0) {
+
+  // Template-instruction suppression: sections still carrying starter-template
+  // editor guidance ("Share a short, warm introduction…") are never shown to
+  // visitors. In draft preview an explicit dashed hint replaces the section so
+  // the administrator sees WHY it is missing from the public site; publishing
+  // is additionally blocked by the readiness check.
+  const public_ = visible.filter((s) => !sectionHasTemplateInstructions(s))
+  const suppressed = ctx.preview ? visible.filter((s) => sectionHasTemplateInstructions(s)) : []
+
+  if (public_.length === 0 && suppressed.length === 0) {
     if (hasChildren) return null
     return (
       <div className="ocs-container py-24 text-center opacity-60">
@@ -90,8 +100,21 @@ export function SectionsRenderer({
   }
   return (
     <>
-      {visible.map((section) => (
+      {public_.map((section) => (
         <SectionRenderer key={section.id} section={section} ctx={ctx} />
+      ))}
+      {suppressed.map((section) => (
+        <div key={section.id} className="ocs-container py-10">
+          <div
+            className="rounded-[var(--oc-radius)] border border-dashed px-6 py-8 text-center text-sm opacity-70"
+            style={{ borderColor: 'var(--oc-border)' }}
+          >
+            <p className="font-medium">“{section.title || section.type}” is hidden from the public site</p>
+            <p className="mt-1" style={{ color: 'var(--oc-muted)' }}>
+              Replace the template text in this section, then publish to make it visible.
+            </p>
+          </div>
+        </div>
       ))}
     </>
   )

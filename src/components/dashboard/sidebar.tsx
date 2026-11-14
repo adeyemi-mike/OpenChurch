@@ -18,6 +18,7 @@ import {
   HandCoins,
   UsersRound,
   Building2,
+  Globe,
   Settings2,
   History,
   ExternalLink,
@@ -59,6 +60,7 @@ const NAV_ENGAGE: NavItemDef[] = [
 const NAV_ADMIN: NavItemDef[] = [
   { href: '/users', label: 'Users & Roles', icon: UsersRound, roles: ['OWNER'] },
   { href: '/profile', label: 'Church Profile', icon: Building2, roles: ['OWNER', 'ADMIN'] },
+  { href: '/domains', label: 'Custom Domains', icon: Globe, roles: ['OWNER', 'ADMIN'] },
   { href: '/settings', label: 'Website Settings', icon: Settings2, roles: ['OWNER'] },
   { href: '/activity', label: 'Activity Log', icon: History, roles: ['OWNER', 'ADMIN'] },
 ]

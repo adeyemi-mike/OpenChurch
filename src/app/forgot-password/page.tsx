@@ -5,7 +5,7 @@ import { AuthShell } from '@/components/auth/auth-shell'
 import { isMailConfigured } from '@/lib/mail'
 import { ResetRequestForm } from './reset-request-form'
 
-export const metadata = { title: 'Forgot password' }
+export const metadata = { title: 'Forgot password', robots: { index: false, follow: false } }
 
 /**
  * Password recovery.

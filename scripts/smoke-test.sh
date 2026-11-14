@@ -37,6 +37,7 @@ for p in /console/grace-community \
          /console/grace-community/users \
          /console/grace-community/profile \
          /console/grace-community/settings \
+         /console/grace-community/domains \
          /console/grace-community/activity; do
   check "$p"
 done
@@ -64,6 +65,7 @@ check "/api/dashboard/grace-community/users"
 check "/api/dashboard/grace-community/services"
 check "/api/dashboard/grace-community/locations"
 check "/api/dashboard/grace-community/activity"
+check "/api/dashboard/grace-community/domains"
 check "/api/dashboard/grace-community/profile"
 
 echo "== tenant isolation: Grace owner tries Emmanuel APIs =="

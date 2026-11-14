@@ -60,3 +60,4 @@ logs
 /db/
 /prisma/dev.db
 agent-ctx/
+upload/

@@ -100,8 +100,55 @@ Notes and honest limits:
 | `DEPLOYMENT_MODE` | no (`PATH`) | `PATH` or `HOST` routing (below) |
 | `PLATFORM_ROOT_DOMAIN` | HOST mode only | e.g. `openchurch.example` |
 | `STORAGE_PATH` | no (`./storage/uploads`) | Media library location |
+| `VERCEL_TOKEN` | automated domains | Enables automated Vercel domain assignment (with `VERCEL_PROJECT_ID`) |
+| `VERCEL_PROJECT_ID` | automated domains | Vercel project the domains are attached to |
+| `VERCEL_TEAM_ID` | no | Vercel team scope, when the project belongs to a team |
 
 Optional integrations (none required; see `.env.example`): Paystack/Stripe keys for future direct integrations, SMTP for email, analytics.
+
+## Custom domains (church-owned domains)
+
+Every church can serve its website on its own domain (e.g. `www.gracecommunity.org`)
+alongside its platform address (`/church/<slug>`). Managed end-to-end from
+**Dashboard → Custom Domains** (owners and admins):
+
+1. **Add domain** — validated and normalised (no IPs, localhost, ports,
+   hosting-platform suffixes, or the platform's own hosts).
+2. **Verify ownership** — a unique TXT record
+   (`_openchurch-verify.<domain>` → `openchurch-verify=<token>`) checked by a
+   server-side DNS lookup. Tokens are 256-bit random values stored only as
+   SHA-256 hashes, expire after 72h, and can be regenerated. A domain is
+   never verified by clicking a button.
+3. **Connect hosting**:
+   - **Vercel deployments** (automated): set `VERCEL_TOKEN` +
+     `VERCEL_PROJECT_ID` (+ `VERCEL_TEAM_ID` when applicable). The platform
+     adds the domain to the Vercel project and shows the provider's required
+     DNS records; status (`verified`, `misconfigured`) comes from the Vercel
+     API — never fabricated.
+   - **Self-hosted / no API** (manual mode): the dashboard shows DNS
+     instructions; the owner confirms once the domain points at the server.
+     Status is labelled "owner-confirmed" — there is no provider API to
+     confirm it automatically.
+4. **Set primary** — canonical URLs, sitemap URLs and Open Graph links use
+   the primary domain; the platform slug route keeps working (and canonicals
+   point at the primary domain, so the two URLs never compete in search).
+
+**Security properties**: a hostname can only belong to one church (DB unique
+constraint + claim-race handling); expired pending claims are reclaimable,
+verified domains never transfer; removal detaches hosting and stops
+resolution; every change is audited.
+
+**Resolution & caching**: requests on a verified+ACTIVE domain are rewritten
+to the church route in `src/proxy.ts` (Next.js 16 proxy, Node runtime).
+Host→tenant lookups are cached for 60s per instance INCLUDING negative
+results — a removed domain can therefore resolve for at most ~60s on
+instances that missed the invalidation (relevant on multi-instance
+serverless deployments).
+
+**DNS records the church adds** (its own registrar):
+- `_openchurch-verify.<domain>` TXT `openchurch-verify=<token>` (ownership)
+- the hosting record the provider reports (e.g. Vercel CNAME/A), displayed
+  by the dashboard with copy buttons.
 
 ## Church URL routing
 
