@@ -4,22 +4,26 @@ import { z } from 'zod'
 import { rateLimit } from '@/lib/rate-limit'
 import { listDomains, addDomain } from '@/lib/domains/service'
 import { isVercelConfigured } from '@/lib/domains/provider'
+import { getDomainCapability } from '@/lib/domains/capability'
 
 const addSchema = z.object({
   domain: z.string().trim().min(3).max(253),
 })
 
-/** List the church's custom domains (with live status). */
+/** List the church's custom domains (with live status and the deployment's
+ * domain capability, so the UI can stay honest about what is supported). */
 export const GET = route(async (_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) => {
   const { slug } = await params
   const ctx = await requireChurch(slug, 'domains:manage')
   const domains = await listDomains(ctx.churchId)
+  const capability = getDomainCapability()
   return ok({
     domains,
     provider: {
       vercelConfigured: isVercelConfigured(),
-      automated: isVercelConfigured() ? 'vercel' : 'manual',
+      automated: capability.automated ? 'vercel' : 'manual',
     },
+    capability,
   })
 })
 

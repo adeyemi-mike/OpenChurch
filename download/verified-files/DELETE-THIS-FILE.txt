@@ -1,5 +1,0 @@
-IMPORTANT — file to DELETE from the GitHub repo (renamed in this release):
-
-  src/middleware.ts   -> replaced by src/proxy.ts (Next.js 16 proxy convention)
-
-When pushing, delete src/middleware.ts; the replacement src/proxy.ts is in this folder.

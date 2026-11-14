@@ -9,6 +9,7 @@ import {
   type TxtResolver,
 } from './txt'
 import { getDomainProvider } from './provider'
+import { domainsOperable, getDomainCapability } from './capability'
 import { invalidateAllHosts, invalidateHost } from './cache'
 import { recordAudit } from '@/lib/audit'
 import type { ChurchRole } from '@/lib/permissions'
@@ -30,6 +31,22 @@ import type { ChurchRole } from '@/lib/permissions'
  */
 
 export type DomainActionOutcome<T> = ({ ok: true } & T) | { ok: false; status: number; error: string; code: string }
+
+/**
+ * The deployment cannot offer the domain workflow at all (managed hosting
+ * without the domain-assignment integration — e.g. the hosted demonstration).
+ * Mutations are refused with an honest explanation; listing and removal
+ * stay available so existing rows remain visible and cleanable.
+ */
+function unavailableOutcome() {
+  return {
+    ok: false as const,
+    status: 403,
+    error:
+      'Custom domains are not available on this deployment: it runs on managed hosting without the domain-assignment integration, so the platform cannot complete the required configuration. Your website stays reachable at its platform address; custom domains are supported on self-hosted installations and on managed hosting with the integration enabled (docs/DEPLOYMENT.md).',
+    code: 'DOMAINS_UNAVAILABLE',
+  }
+}
 
 export type DomainView = {
   id: string
@@ -124,6 +141,7 @@ export async function addDomain(input: {
   rawDomain: string
 }): Promise<DomainActionOutcome<{ domain: DomainView }>> {
   const { churchId, actorUserId, actorEmail } = input
+  if (!domainsOperable()) return unavailableOutcome()
   const validation: DomainValidation = validateCustomDomain(input.rawDomain)
   if (!validation.ok) return { ok: false, status: 400, error: validation.error, code: 'INVALID_DOMAIN' }
   const domain = validation.domain
@@ -206,6 +224,7 @@ export async function regenerateToken(input: {
   actorUserId: string
   actorEmail: string
 }): Promise<DomainActionOutcome<{ domain: DomainView }>> {
+  if (!domainsOperable()) return unavailableOutcome()
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
   if (row.status !== 'PENDING') {
@@ -243,6 +262,7 @@ export async function verifyDomain(input: {
   actorEmail: string
   resolver?: TxtResolver
 }): Promise<DomainActionOutcome<{ domain: DomainView }>> {
+  if (!domainsOperable()) return unavailableOutcome()
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
   if (row.status === 'VERIFIED' || row.status === 'ACTIVE') {
@@ -345,12 +365,29 @@ export async function connectDomain(input: {
     return { ok: false, status: 400, error: 'Verify domain ownership first.', code: 'NOT_VERIFIED' }
   }
 
-  const provider = getDomainProvider()
-  if (!provider) {
+  if (!domainsOperable()) return unavailableOutcome()
+  const cap = getDomainCapability()
+  // Self-hosted mode (including an explicit CUSTOM_DOMAIN_MODE=manual
+  // override): automated attach cannot work here — the dashboard's manual
+  // confirmation step is the supported path.
+  if (cap.mode === 'self-hosted') {
     return {
       ok: false,
       status: 503,
-      error: 'No hosting provider is configured on this deployment. Follow the manual DNS instructions instead.',
+      error:
+        'This deployment has no automated hosting-provider integration. Point your domain at the server per the DNS instructions and use "Confirm manual connection" instead.',
+      code: 'NO_PROVIDER',
+    }
+  }
+  const provider = getDomainProvider()
+  if (!provider?.configured) {
+    // Defensive: managed-auto implies a configured provider; this guards
+    // against configuration changing between the checks above.
+    return {
+      ok: false,
+      status: 503,
+      error:
+        'This deployment has no automated hosting-provider integration. Point your domain at the server per the DNS instructions and use "Confirm manual connection" instead.',
       code: 'NO_PROVIDER',
     }
   }
@@ -412,8 +449,14 @@ export async function confirmManualConnection(input: {
   if (row.status !== 'VERIFIED') {
     return { ok: false, status: 400, error: 'Verify domain ownership first.', code: 'NOT_VERIFIED' }
   }
-  const provider = getDomainProvider()
-  if (provider?.kind === 'vercel') {
+  // Manual confirmation is ONLY legitimate on a self-hosted deployment: the
+  // owner controls a server they can point DNS at. On serverless hosting
+  // without the provider integration it would fabricate a state the hosting
+  // provider cannot deliver (no fixed server address exists); with automated
+  // assignment configured, provider truth is required instead.
+  const cap = getDomainCapability()
+  if (cap.mode === 'unavailable') return unavailableOutcome()
+  if (cap.mode === 'managed-auto') {
     return {
       ok: false,
       status: 400,
@@ -455,6 +498,7 @@ export async function setPrimaryDomain(input: {
   actorUserId: string
   actorEmail: string
 }): Promise<DomainActionOutcome<{ domain: DomainView }>> {
+  if (!domainsOperable()) return unavailableOutcome()
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
   if (row.status !== 'ACTIVE') {

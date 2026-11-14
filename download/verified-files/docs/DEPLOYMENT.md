@@ -100,17 +100,36 @@ Notes and honest limits:
 | `DEPLOYMENT_MODE` | no (`PATH`) | `PATH` or `HOST` routing (below) |
 | `PLATFORM_ROOT_DOMAIN` | HOST mode only | e.g. `openchurch.example` |
 | `STORAGE_PATH` | no (`./storage/uploads`) | Media library location |
-| `VERCEL_TOKEN` | automated domains | Enables automated Vercel domain assignment (with `VERCEL_PROJECT_ID`) |
-| `VERCEL_PROJECT_ID` | automated domains | Vercel project the domains are attached to |
+| `VERCEL_TOKEN` | managed hosting, automated domains | Enables automated Vercel domain assignment (with `VERCEL_PROJECT_ID`) |
+| `VERCEL_PROJECT_ID` | managed hosting, automated domains | Vercel project the domains are attached to |
 | `VERCEL_TEAM_ID` | no | Vercel team scope, when the project belongs to a team |
+| `CUSTOM_DOMAIN_MODE` | no (auto-derived) | Operator override for hosts the platform cannot auto-detect: `auto` (requires the provider variables above), `manual` (self-hosted workflow), `off` (domains unavailable) — see "Custom domains" below |
 
 Optional integrations (none required; see `.env.example`): Paystack/Stripe keys for future direct integrations, SMTP for email, analytics.
 
 ## Custom domains (church-owned domains)
 
-Every church can serve its website on its own domain (e.g. `www.gracecommunity.org`)
-alongside its platform address (`/church/<slug>`). Managed end-to-end from
-**Dashboard → Custom Domains** (owners and admins):
+OpenChurch supports custom domains in **two deployment models**, and it is
+honest about which one a given installation is running as. The platform
+address (`/church/<slug>`) keeps working everywhere and is never replaced —
+a custom domain only adds another way in.
+
+| Deployment model | Who configures domains | Hosting assignment | Status truth |
+| --- | --- | --- | --- |
+| **Self-hosted installation** (Docker / Node host) | Administrators, via DNS + reverse proxy (see HOST mode below); owners verify in the dashboard | Manual — the owner points DNS at the server and confirms; dashboard labels it "owner-confirmed" | DNS TXT for ownership; no provider API confirms hosting |
+| **Managed hosting with provider integration** (Vercel: `VERCEL_TOKEN` + `VERCEL_PROJECT_ID`) | Church owners, entirely from **Dashboard → Custom Domains** | Automated through the provider API | Provider-verified (`verified`/`misconfigured` come from the API) |
+| **Serverless hosting without the integration** (hosted demonstration, or Vercel without the token pair) | — not available — | The platform cannot complete the required configuration, so the dashboard reports domains as **unavailable** instead of offering steps that cannot succeed | n/a |
+
+The capability is derived automatically (`src/lib/domains/capability.ts`):
+provider variables set → managed hosting with automation; `VERCEL=1` (any
+serverless runtime) without them → unavailable; anything else → self-hosted
+manual workflow. Operators of hosts the platform cannot auto-detect (Coolify,
+Fly.io, Kubernetes, …) can set `CUSTOM_DOMAIN_MODE=manual` / `off` / `auto`
+explicitly; `auto` is honoured only when the provider variables are actually
+configured — an auto declaration without credentials never pretends that
+automation exists.
+
+**Dashboard workflow** (owners and admins, Dashboard → Custom Domains):
 
 1. **Add domain** — validated and normalised (no IPs, localhost, ports,
    hosting-platform suffixes, or the platform's own hosts).
@@ -120,18 +139,23 @@ alongside its platform address (`/church/<slug>`). Managed end-to-end from
    SHA-256 hashes, expire after 72h, and can be regenerated. A domain is
    never verified by clicking a button.
 3. **Connect hosting**:
-   - **Vercel deployments** (automated): set `VERCEL_TOKEN` +
-     `VERCEL_PROJECT_ID` (+ `VERCEL_TEAM_ID` when applicable). The platform
-     adds the domain to the Vercel project and shows the provider's required
-     DNS records; status (`verified`, `misconfigured`) comes from the Vercel
-     API — never fabricated.
-   - **Self-hosted / no API** (manual mode): the dashboard shows DNS
-     instructions; the owner confirms once the domain points at the server.
-     Status is labelled "owner-confirmed" — there is no provider API to
-     confirm it automatically.
+   - **Managed hosting, automated**: the platform adds the domain to the
+     provider project, shows the provider's required DNS records (A for
+     apexes, CNAME for subdomains, per the provider's own response — never
+     hardcoded), and reflects the provider's status; SSL provisioning is
+     reported as such, never claimed as done.
+   - **Self-hosted, manual**: the dashboard shows DNS instructions; the
+     owner points the domain at the server, configures the reverse proxy
+     (below), and confirms. Status is labelled "owner-confirmed".
 4. **Set primary** — canonical URLs, sitemap URLs and Open Graph links use
    the primary domain; the platform slug route keeps working (and canonicals
    point at the primary domain, so the two URLs never compete in search).
+
+On a serverless deployment without the integration, the dashboard replaces
+the add-form and workflow steps with this explanation, and the server-side
+service refuses domain mutations with a clear error (`DOMAINS_UNAVAILABLE`) —
+defence in depth, so a stale client cannot bypass the UI. Listing and removal
+remain available for any pre-existing rows.
 
 **Security properties**: a hostname can only belong to one church (DB unique
 constraint + claim-race handling); expired pending claims are reclaimable,
@@ -164,10 +188,14 @@ For `grace.openchurch.example` or `www.gracecommunity.org`:
 2. Add a wildcard DNS record `*.openchurch.example` → your server.
 3. Configure your reverse proxy to forward **all** hosts to the app (the Host header is preserved).
 4. The resolver (`src/lib/tenancy/resolver.ts`) maps the Host header to a church:
-   - custom domain → exact match in `church_domains` (with `isVerified`)
+   - custom domain → exact match in `church_domains` (only `ACTIVE` domains resolve)
    - subdomain of your root domain → church slug
 
-**Honest status:** host resolution and the `church_domains` table are implemented; **automated DNS ownership verification is not** — `isVerified` must be set by an operator today. Subdomain mode additionally expects the wildcard above. For a single-church installation you can alternatively point your domain at the app and treat the church as the only tenant.
+**Honest status:** host resolution, TXT ownership verification and the full
+`church_domains` lifecycle are implemented (see "Custom domains" above).
+Subdomain mode additionally expects the wildcard DNS record above. For a
+single-church installation you can alternatively point your domain at the app
+and treat the church as the only tenant.
 
 ## Managed-platform operations
 

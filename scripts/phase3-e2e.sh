@@ -165,6 +165,8 @@ BAD2=$(api /tmp/p3-grace.jar POST "/api/dashboard/grace-community/domains" '{"do
 contains "hosting-suffix domain rejected" "$BAD2" "INVALID_DOMAIN" yes
 ST=$(api /tmp/p3-author.jar POST "/api/dashboard/grace-community/domains" '{"domain":"author-try.example.org"}' >/dev/null; echo "$API_STATUS")
 check "author cannot manage domains (403)" "$ST" "403"
+CAP=$(api /tmp/p3-grace.jar GET "/api/dashboard/grace-community/domains")
+contains "domain capability reported (self-hosted on a plain server)" "$CAP" '"mode":"self-hosted"' yes
 ST=$(api /tmp/p3-grace.jar DELETE "/api/dashboard/grace-community/domains/$DOM_ID" >/dev/null; echo "$API_STATUS")
 check "domain removed by owner" "$ST" "200"
 

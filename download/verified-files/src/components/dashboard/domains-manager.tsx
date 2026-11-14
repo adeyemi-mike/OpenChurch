@@ -73,6 +73,13 @@ type ProviderInfo = {
   automated: 'vercel' | 'manual'
 }
 
+/** What THIS deployment supports, per src/lib/domains/capability.ts. */
+type Capability = {
+  mode: 'managed-auto' | 'self-hosted' | 'unavailable'
+  automated: boolean
+  summary: string
+}
+
 function statusBadge(d: DomainView) {
   if (d.status === 'ACTIVE' && d.isPrimary) {
     return (
@@ -140,6 +147,7 @@ export function DomainsManager({
 }) {
   const [domains, setDomains] = useState<DomainView[]>([])
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
+  const [capability, setCapability] = useState<Capability | null>(null)
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [newDomain, setNewDomain] = useState('')
@@ -149,9 +157,12 @@ export function DomainsManager({
 
   const load = useCallback(async () => {
     try {
-      const res = await apiFetch<{ domains: DomainView[]; provider: ProviderInfo }>(`/api/dashboard/${slug}/domains`)
+      const res = await apiFetch<{ domains: DomainView[]; provider: ProviderInfo; capability: Capability }>(
+        `/api/dashboard/${slug}/domains`
+      )
       setDomains(res.domains)
       setProvider(res.provider)
+      setCapability(res.capability)
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : 'Could not load domains.')
     } finally {
@@ -225,7 +236,7 @@ export function DomainsManager({
     setBusyId(d.id)
     try {
       await apiFetch(`/api/dashboard/${slug}/domains/${d.id}`, { method: 'DELETE' })
-      toast.success(`${d.domain} removed. Your ${platformUrl.includes('/church/') ? 'platform address' : 'site address'} keeps working.`)
+      toast.success(`${d.domain} removed. Your platform address keeps working.`)
       setConfirmRemove(null)
       await load()
     } catch (err) {
@@ -252,17 +263,58 @@ export function DomainsManager({
         </Button>
       </div>
 
-      {provider && !provider.vercelConfigured && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
-          This deployment has no automated hosting integration configured — domain connection uses the
-          <strong> manual workflow</strong>: verify ownership with the TXT record, point your domain&apos;s DNS
-          at this server, then confirm below. (Operators can enable automated Vercel assignment with
-          <code className="mx-1 rounded bg-amber-100 dark:bg-amber-900 px-1">VERCEL_TOKEN</code> and
-          <code className="mx-1 rounded bg-amber-100 dark:bg-amber-900 px-1">VERCEL_PROJECT_ID</code>.)
+      {capability?.mode === 'unavailable' ? (
+        <div className="rounded-xl border bg-muted/40 px-4 py-4 sm:px-5">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="mt-0.5 size-5 shrink-0 text-amber-600" aria-hidden />
+            <div className="space-y-3 text-sm">
+              <p className="font-medium">Custom domains are not available on this deployment</p>
+              <p className="text-muted-foreground">
+                This hosted demonstration serves every church website from its platform address
+                (above), and this instance runs on managed hosting without the domain-assignment
+                integration — the platform cannot complete the required hosting configuration here.
+                Rather than offer steps that cannot succeed, the dashboard reports domains as
+                unavailable.
+              </p>
+              <div className="text-muted-foreground">
+                <p className="font-medium text-foreground">OpenChurch supports custom domains in two deployment models:</p>
+                <ul className="mt-1.5 list-disc space-y-1 pl-5">
+                  <li>
+                    <strong className="text-foreground">Self-hosted installations</strong> — administrators configure
+                    custom domains and subdomain routing on infrastructure they control
+                    (docs/DEPLOYMENT.md in the repository).
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Managed hosting</strong> — church owners connect and manage a
+                    custom domain directly from this dashboard (ownership verification, DNS
+                    instructions, hosting-provider assignment, SSL status, primary domain), enabled
+                    by the operator through the provider integration (e.g.
+                    <code className="mx-1 rounded bg-muted px-1">VERCEL_TOKEN</code> +
+                    <code className="mx-1 rounded bg-muted px-1">VERCEL_PROJECT_ID</code> on Vercel).
+                  </li>
+                </ul>
+              </div>
+              <p className="text-muted-foreground">
+                Your website stays fully reachable at the platform address above.
+              </p>
+            </div>
+          </div>
         </div>
+      ) : (
+        capability?.mode === 'self-hosted' && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            This deployment is self-hosted without an automated hosting integration — domain connection
+            uses the <strong>manual workflow</strong>: verify ownership with the TXT record, point your domain&apos;s
+            DNS at this server, then confirm below. (Operators can enable automated Vercel assignment with
+            <code className="mx-1 rounded bg-amber-100 dark:bg-amber-900 px-1">VERCEL_TOKEN</code> and
+            <code className="mx-1 rounded bg-amber-100 dark:bg-amber-900 px-1">VERCEL_PROJECT_ID</code>, or declare
+            other hosts with
+            <code className="mx-1 rounded bg-amber-100 dark:bg-amber-900 px-1">CUSTOM_DOMAIN_MODE</code>.)
+          </div>
+        )
       )}
 
-      {canManage && (
+      {capability?.mode !== 'unavailable' && canManage && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Add a domain</CardTitle>
@@ -307,7 +359,9 @@ export function DomainsManager({
       ) : domains.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No custom domains yet — add your church&apos;s domain above to get started.
+            {capability?.mode === 'unavailable'
+              ? 'No custom domains to show.'
+              : 'No custom domains yet — add your church\u2019s domain above to get started.'}
           </CardContent>
         </Card>
       ) : (
@@ -329,6 +383,13 @@ export function DomainsManager({
                 )}
               </CardHeader>
               <CardContent className="space-y-4">
+                {capability?.mode === 'unavailable' ? (
+                  <p className="text-sm text-muted-foreground">
+                    Domain management is not available on this deployment (see the notice above). This
+                    record is shown read-only and can be removed.
+                  </p>
+                ) : (
+                  <>
                 {/* Step 1 — TXT ownership verification */}
                 {(d.status === 'PENDING' || d.verificationToken) && d.txtRecord && (
                   <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
@@ -361,7 +422,7 @@ export function DomainsManager({
                       <Button size="sm" variant="outline" onClick={() => void act(d.id, 'regenerate-token')} disabled={busyId === d.id} className="gap-1.5">
                         <RefreshCw className="size-3.5" aria-hidden /> New token
                       </Button>
-                      <span className="text-xs text-muted-olumnforeground">
+                      <span className="text-xs text-muted-foreground">
                         {d.tokenExpiresAt ? `Token expires ${new Date(d.tokenExpiresAt).toLocaleString()}` : null}
                       </span>
                     </div>
@@ -457,6 +518,8 @@ export function DomainsManager({
                         ? 'managed by your hosting proxy (self-hosted deployment).'
                         : d.sslStatus.toLowerCase()}
                   </p>
+                )}
+                  </>
                 )}
 
                 {canManage && (

@@ -9,6 +9,7 @@ The honest list. "Implemented" means it exists in this codebase, is wired to the
 - Registration, login, logout (bcrypt + hashed-session cookies, httpOnly)
 - 5-step onboarding wizard (info → identity → structure → design → publish), skippable & resumable, slug availability checking
 - Path-based church URLs (`/church/<slug>`); host-based resolver provided (see Deployment)
+- Custom-domain management in two deployment models: **self-hosted** installations (TXT ownership verification, DNS instructions, owner-confirmed hosting via reverse proxy) and **managed hosting** (automated provider assignment via the Vercel API, provider-reported DNS records, SSL status) — plus primary-domain selection, canonical URL strategy, per-church sitemaps under custom domains, host→tenant routing in the proxy, and truthful capability reporting: serverless deployments without the provider integration (incl. the hosted demonstration) state that domains are unavailable rather than offering steps that cannot succeed. Platform `/church/<slug>` addresses keep working everywhere as fallbacks
 - Platform Super Admin console: tenant list, counts, publish status, suspend/activate, audit trail, user password reset (revokes all sessions, audited)
 - Role-based access control (Owner / Admin / Editor / Author) enforced server-side on every route
 - Audit log of administrative actions
@@ -56,7 +57,6 @@ The honest list. "Implemented" means it exists in this codebase, is wired to the
 
 | Feature | Status & existing hook |
 | --- | --- |
-| Automated DNS verification for custom domains | **Shipped**: TXT challenge (`_openchurch-verify.<domain>`), hashed tokens with expiry, Vercel hosting assignment via API (or honest manual mode), primary-domain canonicals, proxy host routing — see docs/DEPLOYMENT.md → "Custom domains" |
 | Direct Paystack/Stripe API giving | Link-based giving works; provider field + secure server-side design documented (SECURITY.md) |
 | Recurring events UI | `events.isRecurring` / `recurrenceRule` columns exist; no recurrence editor yet |
 | Email delivery (invites, notifications) | Members are added by existing account email; SMTP env placeholder reserved |

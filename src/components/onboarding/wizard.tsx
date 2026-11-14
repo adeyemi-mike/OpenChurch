@@ -479,7 +479,9 @@ export function OnboardingWizard({ userName }: { userName: string }) {
                 {slugStatus === 'bad' && <span className="text-destructive">{slugReason ?? 'Not available.'}</span>}
                 {slugStatus === 'idle' && (
                   <span className="text-muted-foreground">
-                    This becomes your free address. A custom domain (e.g. yourchurch.org) can be connected after publishing.
+                    This becomes your free address — it always works. Custom domains (e.g.
+                    yourchurch.org) are supported on self-hosted and managed-hosting deployments;
+                    see Dashboard → Custom domains.
                   </span>
                 )}
               </p>

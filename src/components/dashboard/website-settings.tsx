@@ -22,10 +22,16 @@ import { apiFetch, ApiClientError } from '@/lib/client/api'
 export function WebsiteSettings({
   slug,
   isPublished,
+  platformUrl,
+  domainMode,
   initial,
 }: {
   slug: string
   isPublished: boolean
+  /** Absolute platform address of this church (e.g. https://host/church/slug). */
+  platformUrl: string
+  /** What this deployment supports: 'managed-auto' | 'self-hosted' | 'unavailable'. */
+  domainMode: 'managed-auto' | 'self-hosted' | 'unavailable'
   initial: {
     defaultSeoTitle: string
     defaultSeoDescription: string
@@ -187,12 +193,42 @@ export function WebsiteSettings({
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="rounded-xl border bg-muted/40 px-4 py-3 font-mono text-sm break-all">
-            /church/{slug}
+            <a href={platformUrl} className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">
+              {platformUrl.replace(/^https?:\/\//, '')}
+            </a>
           </p>
-          <p className="text-sm text-muted-foreground">
-            Custom domains (yourchurch.org) and subdomain routing are designed for self-hosted
-            deployments — see docs/DEPLOYMENT.md in the repository. In this hosted demo, your site is
-            served from the path above.
+          {domainMode === 'unavailable' ? (
+            <p className="text-sm text-muted-foreground">
+              This hosted demonstration serves your website from the platform address above. Custom
+              domains are not available on this instance: it runs on managed hosting without the
+              domain-assignment integration, so the platform cannot complete the required hosting
+              configuration. Custom domains <em>are</em> supported by OpenChurch in two deployment
+              models — self-hosted installations (administrators configure DNS and subdomain routing
+              per docs/DEPLOYMENT.md in the repository) and managed hosting (church owners connect a
+              domain right in the dashboard, with ownership verification, DNS instructions, hosting
+              assignment, SSL status and primary-domain selection).
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Your church can additionally serve its website on its own domain (e.g.
+                www.yourchurch.org). This deployment supports connecting one right from the dashboard:
+                verify ownership with a DNS TXT record, follow the DNS instructions shown there, and
+                choose your primary domain once hosting is confirmed.
+              </p>
+              <p className="text-sm">
+                <Link
+                  href={`/console/${slug}/domains`}
+                  className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+                >
+                  Custom domains <ExternalLink className="size-3.5" aria-hidden />
+                </Link>
+              </p>
+            </>
+          )}
+          <p className="text-xs text-muted-foreground">
+            The platform address keeps working no matter what — a custom domain never replaces it, it
+            only adds another way in.
           </p>
         </CardContent>
       </Card>

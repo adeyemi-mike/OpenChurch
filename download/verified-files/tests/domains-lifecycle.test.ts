@@ -268,3 +268,110 @@ describe('removal lifecycle', () => {
     if (!res.ok) expect(res.status).toBe(404)
   })
 })
+
+describe('capability gates: serverless hosting without provider integration', () => {
+  // Simulate the hosted demonstration: a serverless runtime (Vercel sets
+  // VERCEL=1) with NO provider credentials. The workflow must be refused
+  // honestly — listing and removal stay available.
+  let savedEnv: Record<string, string | undefined>
+
+  beforeAll(() => {
+    savedEnv = {
+      VERCEL: process.env.VERCEL,
+      VERCEL_TOKEN: process.env.VERCEL_TOKEN,
+      VERCEL_PROJECT_ID: process.env.VERCEL_PROJECT_ID,
+      CUSTOM_DOMAIN_MODE: process.env.CUSTOM_DOMAIN_MODE,
+    }
+    delete process.env.VERCEL_TOKEN
+    delete process.env.VERCEL_PROJECT_ID
+    delete process.env.CUSTOM_DOMAIN_MODE
+    process.env.VERCEL = '1'
+  })
+
+  afterAll(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+
+  it('adding a domain is refused with DOMAINS_UNAVAILABLE', async () => {
+    const res = await svc.addDomain({ churchId: churchA.id, rawDomain: 'blocked.example.org', ...actor })
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.status).toBe(403)
+      expect(res.code).toBe('DOMAINS_UNAVAILABLE')
+      // The refusal explains itself instead of offering impossible steps.
+      expect(res.error).toMatch(/not available on this deployment/)
+    }
+  })
+
+  it('verification and token regeneration are refused for existing rows', async () => {
+    const list = await svc.listDomains(churchA.id)
+    const pending = list.find((d) => d.status === 'PENDING')
+    expect(pending).toBeDefined()
+    const verify = await svc.verifyDomain({ churchId: churchA.id, domainId: pending!.id, ...actor })
+    expect(verify.ok).toBe(false)
+    if (!verify.ok) expect(verify.code).toBe('DOMAINS_UNAVAILABLE')
+    const regen = await svc.regenerateToken({ churchId: churchA.id, domainId: pending!.id, ...actor })
+    expect(regen.ok).toBe(false)
+    if (!regen.ok) expect(regen.code).toBe('DOMAINS_UNAVAILABLE')
+  })
+
+  it('manual confirmation cannot fabricate hosting on serverless (verified row, no server to point at)', async () => {
+    // Insert a VERIFIED row directly: on a serverless deployment there is no
+    // path that legitimately reaches VERIFIED, but even this state must never
+    // become ACTIVE via owner confirmation.
+    const row = await db.churchDomain.create({
+      data: {
+        churchId: churchA.id,
+        domain: 'verified-on-serverless.example.org',
+        status: 'VERIFIED',
+        isVerified: true,
+        verificationTokenHash: 'a'.repeat(64),
+        tokenExpiresAt: new Date(Date.now() + STUB_TTL),
+      },
+    })
+    const res = await svc.confirmManualConnection({ churchId: churchA.id, domainId: row.id, ...actor })
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.status).toBe(403)
+      expect(res.code).toBe('DOMAINS_UNAVAILABLE')
+    }
+    // And automated connect is refused too.
+    const connect = await svc.connectDomain({ churchId: churchA.id, domainId: row.id, ...actor })
+    expect(connect.ok).toBe(false)
+    await db.churchDomain.delete({ where: { id: row.id } })
+  })
+
+  it('primary selection and automated connect are refused on ACTIVE rows', async () => {
+    const row = await db.churchDomain.create({
+      data: {
+        churchId: churchA.id,
+        domain: 'active-on-serverless.example.org',
+        status: 'ACTIVE',
+        isVerified: true,
+        provider: 'manual',
+        sslStatus: 'MANAGED_BY_HOST',
+      },
+    })
+    const setPrimary = await svc.setPrimaryDomain({ churchId: churchA.id, domainId: row.id, ...actor })
+    expect(setPrimary.ok).toBe(false)
+    if (!setPrimary.ok) expect(setPrimary.code).toBe('DOMAINS_UNAVAILABLE')
+    // connectDomain requires a VERIFIED row, so an ACTIVE row gets the
+    // precise NOT_VERIFIED response (the capability gate sits behind it).
+    const connect = await svc.connectDomain({ churchId: churchA.id, domainId: row.id, ...actor })
+    expect(connect.ok).toBe(false)
+    if (!connect.ok) expect(connect.code).toBe('NOT_VERIFIED')
+    await db.churchDomain.delete({ where: { id: row.id } })
+  })
+
+  it('removal stays available (cleanup is always legitimate)', async () => {
+    const list = await svc.listDomains(churchA.id)
+    expect(list.length).toBeGreaterThan(0)
+    const res = await svc.removeDomain({ churchId: churchA.id, domainId: list[0].id, ...actor })
+    expect(res.ok).toBe(true)
+    const after = await svc.listDomains(churchA.id)
+    expect(after.find((d) => d.id === list[0].id)).toBeUndefined()
+  })
+})

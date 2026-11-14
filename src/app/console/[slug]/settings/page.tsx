@@ -3,6 +3,8 @@ import { ShieldAlert } from 'lucide-react'
 import { requireChurchContext } from '@/lib/auth/guards'
 import { can } from '@/lib/permissions'
 import { WebsiteSettings } from '@/components/dashboard/website-settings'
+import { churchBaseUrl } from '@/lib/tenancy/resolver'
+import { getDomainCapability } from '@/lib/domains/capability'
 
 export const metadata = { title: 'Website Settings' }
 
@@ -30,6 +32,8 @@ export default async function WebsiteSettingsPage({ params }: { params: Promise<
     <WebsiteSettings
       slug={slug}
       isPublished={ctx.church.isPublished}
+      platformUrl={churchBaseUrl(ctx.church.slug)}
+      domainMode={getDomainCapability().mode}
       initial={{
         defaultSeoTitle: settings.defaultSeoTitle ?? '',
         defaultSeoDescription: settings.defaultSeoDescription ?? '',
