@@ -1,266 +1,4 @@
-              >
-                <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          {/* Sensitive-data notice for editors */}
-          {canViewSensitive === false ? (
-            <p className="flex items-start gap-2.5 rounded-xl border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-              <EyeOff className="mt-0.5 size-4 shrink-0" aria-hidden />
-              You are viewing general enquiries only. Prayer and counselling requests are visible
-              to owners and administrators.
-            </p>
-          ) : null}
-
-          {/* Inbox list */}
-          {error ? (
-            <p
-              role="alert"
-              className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-            >
-              {error}
-            </p>
-          ) : loading ? (
-            <div className="grid place-items-center py-20 text-muted-foreground" role="status">
-              <Loader2 className="size-6 animate-spin" aria-hidden />
-            </div>
-          ) : items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed py-16 text-center">
-              <Inbox className="mx-auto size-8 text-muted-foreground/50" aria-hidden />
-              <p className="mt-3 font-medium">
-                {hasFilters ? 'No enquiries match your filters' : 'No enquiries yet'}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {hasFilters
-                  ? 'Try a different status, type or search term.'
-                  : 'Messages from your website contact, prayer and other forms will appear here.'}
-              </p>
-            </div>
-          ) : (
-            <>
-              <ul className="space-y-3">
-                {items.map((s) => {
-                  const TypeIcon = TYPE_ICONS[s.type] ?? Mail
-                  return (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelected(s)}
-                        className="flex w-full flex-col gap-3 rounded-xl border bg-background p-4 text-left shadow-xs transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex-row sm:items-center sm:justify-between"
-                        aria-label={`Open enquiry from ${s.isSensitive ? 'a confidential request' : s.name}`}
-                      >
-                        <span className="flex min-w-0 items-start gap-3">
-                          <span
-                            className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
-                            aria-hidden
-                          >
-                            <TypeIcon className="size-5" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate font-semibold">
-                              {s.subject?.trim() || `${TYPE_LABEL[s.type] ?? s.type} enquiry`}
-                            </span>
-                            <span className="mt-0.5 flex items-center gap-1.5 truncate text-sm text-muted-foreground">
-                              {s.isSensitive ? (
-                                <>
-                                  <Lock className="size-3 shrink-0" aria-hidden /> Sensitive request
-                                </>
-                              ) : (
-                                s.name
-                              )}
-                            </span>
-                          </span>
-                        </span>
-                        <span className="flex flex-wrap items-center gap-2 sm:justify-end">
-                          <Badge variant="outline">{TYPE_LABEL[s.type] ?? s.type}</Badge>
-                          {statusBadge(s.status)}
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(s.createdAt).toLocaleString()}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-muted-foreground" role="status">
-                  {rangeStart}–{rangeEnd} of {total}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="h-11"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-11"
-                    onClick={() => setPage((p) => (rangeEnd < total ? p + 1 : p))}
-                    disabled={rangeEnd >= total}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </>
-      )}
-
-      {/* Forms configuration — owners only */}
-      {canManageForms ? (
-        <section className="space-y-4" aria-labelledby="form-settings-title">
-          <div>
-            <h2 id="form-settings-title" className="text-lg font-semibold">
-              Form settings
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Choose which forms accept submissions and edit the wording people see.
-            </p>
-          </div>
-
-          <p className="flex items-start gap-2.5 rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
-            Prayer and counselling submissions are always access-restricted and never shown on the
-            public website.
-          </p>
-
-          {formsError ? (
-            <p
-              role="alert"
-              className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-            >
-              {formsError}
-            </p>
-          ) : formsLoading ? (
-            <div className="grid place-items-center rounded-2xl border py-16 text-muted-foreground" role="status">
-              <Loader2 className="size-6 animate-spin" aria-hidden />
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {forms.map((f) => {
-                const draft = drafts[f.type]
-                if (!draft) return null
-                const dirty =
-                  JSON.stringify(draft) !==
-                  JSON.stringify({
-                    title: f.title,
-                    description: f.description,
-                    successMessage: f.successMessage,
-                    isActive: f.isActive,
-                  })
-                return (
-                  <Card key={f.type} className="gap-4 p-4 sm:p-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold">{TYPE_LABEL[f.type] ?? f.type}</p>
-                      <span className="flex items-center gap-2">
-                        <Label
-                          htmlFor={`form-active-${f.type}`}
-                          className="text-sm text-muted-foreground"
-                        >
-                          Accepting submissions
-                        </Label>
-                        <Switch
-                          id={`form-active-${f.type}`}
-                          checked={draft.isActive}
-                          onCheckedChange={(v) => patchDraft(f.type, { isActive: v })}
-                        />
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`form-title-${f.type}`}>Title</Label>
-                      <Input
-                        id={`form-title-${f.type}`}
-                        value={draft.title}
-                        onChange={(e) => patchDraft(f.type, { title: e.target.value })}
-                        placeholder="Form title"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`form-desc-${f.type}`}>Description</Label>
-                      <Textarea
-                        id={`form-desc-${f.type}`}
-                        value={draft.description}
-                        onChange={(e) => patchDraft(f.type, { description: e.target.value })}
-                        placeholder="Shown above the form fields"
-                        className="min-h-16"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`form-success-${f.type}`}>Success message</Label>
-                      <Input
-                        id={`form-success-${f.type}`}
-                        value={draft.successMessage}
-                        onChange={(e) => patchDraft(f.type, { successMessage: e.target.value })}
-                        placeholder="Thank you message after submitting"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-end gap-2 border-t pt-3">
-                      {dirty ? (
-                        <span className="mr-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
-                          Unsaved changes
-                        </span>
-                      ) : null}
-                      <Button
-                        onClick={() => saveForm(f.type)}
-                        disabled={!dirty || savingForm === f.type}
-                      >
-                        {savingForm === f.type ? (
-                          <Loader2 className="size-4 animate-spin" aria-hidden />
-                        ) : (
-                          <Save className="size-4" aria-hidden />
-                        )}
-                        Save
-                      </Button>
-                    </div>
-                  </Card>
-                )
-              })}
-            </div>
-          )}
-        </section>
-      ) : null}
-
-      {/* Enquiry detail dialog */}
-      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
-          {selected ? (
-            <>
-              <DialogHeader>
-                <DialogTitle className="pr-6">
-                  {selected.subject?.trim() || `${TYPE_LABEL[selected.type] ?? selected.type} enquiry`}
-                </DialogTitle>
-                <DialogDescription>
-                  {selected.isSensitive ? 'Confidential request' : selected.name} ·{' '}
-                  {new Date(selected.createdAt).toLocaleString()}
-                </DialogDescription>
-              </DialogHeader>
-
-              {selected.isSensitive ? (
-                <p className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
-                  <Lock className="size-3.5 shrink-0" aria-hidden />
-                  Kept confidential — pastoral access only
-                </p>
-              ) : null}
-
-              <div className="max-h-64 overflow-y-auto rounded-xl bg-muted/60 p-4 text-sm whitespace-pre-wrap [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
-                {selected.message}
-              </div>
-
-       'use client'
+'use client'
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -636,7 +374,269 @@ export function EnquiriesManager({ slug, role }: { slug: string; role: ChurchRol
                 onClick={() => load()}
                 disabled={loading}
                 aria-label="Refresh enquiries"
-       <div className="space-y-2.5 rounded-xl border p-4 text-sm">
+              >
+                <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+                Refresh
+              </Button>
+            </div>
+          </div>
+
+          {/* Sensitive-data notice for editors */}
+          {canViewSensitive === false ? (
+            <p className="flex items-start gap-2.5 rounded-xl border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+              <EyeOff className="mt-0.5 size-4 shrink-0" aria-hidden />
+              You are viewing general enquiries only. Prayer and counselling requests are visible
+              to owners and administrators.
+            </p>
+          ) : null}
+
+          {/* Inbox list */}
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          ) : loading ? (
+            <div className="grid place-items-center py-20 text-muted-foreground" role="status">
+              <Loader2 className="size-6 animate-spin" aria-hidden />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="rounded-2xl border border-dashed py-16 text-center">
+              <Inbox className="mx-auto size-8 text-muted-foreground/50" aria-hidden />
+              <p className="mt-3 font-medium">
+                {hasFilters ? 'No enquiries match your filters' : 'No enquiries yet'}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {hasFilters
+                  ? 'Try a different status, type or search term.'
+                  : 'Messages from your website contact, prayer and other forms will appear here.'}
+              </p>
+            </div>
+          ) : (
+            <>
+              <ul className="space-y-3">
+                {items.map((s) => {
+                  const TypeIcon = TYPE_ICONS[s.type] ?? Mail
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(s)}
+                        className="flex w-full flex-col gap-3 rounded-xl border bg-background p-4 text-left shadow-xs transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex-row sm:items-center sm:justify-between"
+                        aria-label={`Open enquiry from ${s.isSensitive ? 'a confidential request' : s.name}`}
+                      >
+                        <span className="flex min-w-0 items-start gap-3">
+                          <span
+                            className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"
+                            aria-hidden
+                          >
+                            <TypeIcon className="size-5" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-semibold">
+                              {s.subject?.trim() || `${TYPE_LABEL[s.type] ?? s.type} enquiry`}
+                            </span>
+                            <span className="mt-0.5 flex items-center gap-1.5 truncate text-sm text-muted-foreground">
+                              {s.isSensitive ? (
+                                <>
+                                  <Lock className="size-3 shrink-0" aria-hidden /> Sensitive request
+                                </>
+                              ) : (
+                                s.name
+                              )}
+                            </span>
+                          </span>
+                        </span>
+                        <span className="flex flex-wrap items-center gap-2 sm:justify-end">
+                          <Badge variant="outline">{TYPE_LABEL[s.type] ?? s.type}</Badge>
+                          {statusBadge(s.status)}
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(s.createdAt).toLocaleString()}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+
+              {/* Pagination */}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground" role="status">
+                  {rangeStart}–{rangeEnd} of {total}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-11"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-11"
+                    onClick={() => setPage((p) => (rangeEnd < total ? p + 1 : p))}
+                    disabled={rangeEnd >= total}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* Forms configuration — owners only */}
+      {canManageForms ? (
+        <section className="space-y-4" aria-labelledby="form-settings-title">
+          <div>
+            <h2 id="form-settings-title" className="text-lg font-semibold">
+              Form settings
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Choose which forms accept submissions and edit the wording people see.
+            </p>
+          </div>
+
+          <p className="flex items-start gap-2.5 rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Prayer and counselling submissions are always access-restricted and never shown on the
+            public website.
+          </p>
+
+          {formsError ? (
+            <p
+              role="alert"
+              className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            >
+              {formsError}
+            </p>
+          ) : formsLoading ? (
+            <div className="grid place-items-center rounded-2xl border py-16 text-muted-foreground" role="status">
+              <Loader2 className="size-6 animate-spin" aria-hidden />
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {forms.map((f) => {
+                const draft = drafts[f.type]
+                if (!draft) return null
+                const dirty =
+                  JSON.stringify(draft) !==
+                  JSON.stringify({
+                    title: f.title,
+                    description: f.description,
+                    successMessage: f.successMessage,
+                    isActive: f.isActive,
+                  })
+                return (
+                  <Card key={f.type} className="gap-4 p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold">{TYPE_LABEL[f.type] ?? f.type}</p>
+                      <span className="flex items-center gap-2">
+                        <Label
+                          htmlFor={`form-active-${f.type}`}
+                          className="text-sm text-muted-foreground"
+                        >
+                          Accepting submissions
+                        </Label>
+                        <Switch
+                          id={`form-active-${f.type}`}
+                          checked={draft.isActive}
+                          onCheckedChange={(v) => patchDraft(f.type, { isActive: v })}
+                        />
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`form-title-${f.type}`}>Title</Label>
+                      <Input
+                        id={`form-title-${f.type}`}
+                        value={draft.title}
+                        onChange={(e) => patchDraft(f.type, { title: e.target.value })}
+                        placeholder="Form title"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`form-desc-${f.type}`}>Description</Label>
+                      <Textarea
+                        id={`form-desc-${f.type}`}
+                        value={draft.description}
+                        onChange={(e) => patchDraft(f.type, { description: e.target.value })}
+                        placeholder="Shown above the form fields"
+                        className="min-h-16"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`form-success-${f.type}`}>Success message</Label>
+                      <Input
+                        id={`form-success-${f.type}`}
+                        value={draft.successMessage}
+                        onChange={(e) => patchDraft(f.type, { successMessage: e.target.value })}
+                        placeholder="Thank you message after submitting"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 border-t pt-3">
+                      {dirty ? (
+                        <span className="mr-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
+                          Unsaved changes
+                        </span>
+                      ) : null}
+                      <Button
+                        onClick={() => saveForm(f.type)}
+                        disabled={!dirty || savingForm === f.type}
+                      >
+                        {savingForm === f.type ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden />
+                        ) : (
+                          <Save className="size-4" aria-hidden />
+                        )}
+                        Save
+                      </Button>
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {/* Enquiry detail dialog */}
+      <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
+          {selected ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="pr-6">
+                  {selected.subject?.trim() || `${TYPE_LABEL[selected.type] ?? selected.type} enquiry`}
+                </DialogTitle>
+                <DialogDescription>
+                  {selected.isSensitive ? 'Confidential request' : selected.name} ·{' '}
+                  {new Date(selected.createdAt).toLocaleString()}
+                </DialogDescription>
+              </DialogHeader>
+
+              {selected.isSensitive ? (
+                <p className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary">
+                  <Lock className="size-3.5 shrink-0" aria-hidden />
+                  Kept confidential — pastoral access only
+                </p>
+              ) : null}
+
+              <div className="max-h-64 overflow-y-auto rounded-xl bg-muted/60 p-4 text-sm whitespace-pre-wrap [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
+                {selected.message}
+              </div>
+
+              <div className="space-y-2.5 rounded-xl border p-4 text-sm">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted-foreground">From</span>
                   <span className="truncate font-medium">

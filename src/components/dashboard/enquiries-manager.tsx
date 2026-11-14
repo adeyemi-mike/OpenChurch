@@ -374,82 +374,6 @@ export function EnquiriesManager({ slug, role }: { slug: string; role: ChurchRol
                 onClick={() => load()}
                 disabled={loading}
                 aria-label="Refresh enquiries"
-       <div className="space-y-2.5 rounded-xl border p-4 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">From</span>
-                  <span className="truncate font-medium">
-                    {selected.isSensitive ? 'Sensitive request' : selected.name}
-                  </span>
-                </div>
-                {selected.email ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">Email</span>
-                    <a
-                      href={`mailto:${selected.email}`}
-                      className="inline-flex min-w-0 items-center gap-1.5 font-medium text-primary hover:underline"
-                    >
-                      <Mail className="size-3.5 shrink-0" aria-hidden />
-                      <span className="truncate">{selected.email}</span>
-                    </a>
-                  </div>
-                ) : null}
-                {selected.phone ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground">Phone</span>
-                    <a
-                      href={`tel:${selected.phone}`}
-                      className="inline-flex min-w-0 items-center gap-1.5 font-medium text-primary hover:underline"
-                    >
-                      <Phone className="size-3.5 shrink-0" aria-hidden />
-                      <span className="truncate">{selected.phone}</span>
-                    </a>
-                  </div>
-                ) : null}
-                {!selected.email && !selected.phone ? (
-                  <p className="text-muted-foreground">No contact details provided.</p>
-                ) : null}
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div className="space-y-1.5 sm:w-52">
-                  <Label htmlFor="submission-status">Status</Label>
-                  <Select
-                    value={selected.status}
-                    onValueChange={(v) => updateStatus(v)}
-                    disabled={updating}
-                  >
-                    <SelectTrigger id="submission-status" className="h-11 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NEW">New</SelectItem>
-                      <SelectItem value="IN_PROGRESS">In progress</SelectItem>
-                      <SelectItem value="RESOLVED">Resolved</SelectItem>
-                      <SelectItem value="ARCHIVED">Archived</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  variant="outline"
-                  className="text-destructive hover:text-destructive"
-                  onClick={deleteSubmission}
-                  disabled={deleting}
-                >
-                  {deleting ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Trash2 className="size-4" aria-hidden />
-                  )}
-                  Delete
-                </Button>
-              </div>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
               >
                 <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
                 Refresh
@@ -712,4 +636,79 @@ export function EnquiriesManager({ slug, role }: { slug: string; role: ChurchRol
                 {selected.message}
               </div>
 
-       
+              <div className="space-y-2.5 rounded-xl border p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground">From</span>
+                  <span className="truncate font-medium">
+                    {selected.isSensitive ? 'Sensitive request' : selected.name}
+                  </span>
+                </div>
+                {selected.email ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Email</span>
+                    <a
+                      href={`mailto:${selected.email}`}
+                      className="inline-flex min-w-0 items-center gap-1.5 font-medium text-primary hover:underline"
+                    >
+                      <Mail className="size-3.5 shrink-0" aria-hidden />
+                      <span className="truncate">{selected.email}</span>
+                    </a>
+                  </div>
+                ) : null}
+                {selected.phone ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Phone</span>
+                    <a
+                      href={`tel:${selected.phone}`}
+                      className="inline-flex min-w-0 items-center gap-1.5 font-medium text-primary hover:underline"
+                    >
+                      <Phone className="size-3.5 shrink-0" aria-hidden />
+                      <span className="truncate">{selected.phone}</span>
+                    </a>
+                  </div>
+                ) : null}
+                {!selected.email && !selected.phone ? (
+                  <p className="text-muted-foreground">No contact details provided.</p>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1.5 sm:w-52">
+                  <Label htmlFor="submission-status">Status</Label>
+                  <Select
+                    value={selected.status}
+                    onValueChange={(v) => updateStatus(v)}
+                    disabled={updating}
+                  >
+                    <SelectTrigger id="submission-status" className="h-11 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NEW">New</SelectItem>
+                      <SelectItem value="IN_PROGRESS">In progress</SelectItem>
+                      <SelectItem value="RESOLVED">Resolved</SelectItem>
+                      <SelectItem value="ARCHIVED">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="outline"
+                  className="text-destructive hover:text-destructive"
+                  onClick={deleteSubmission}
+                  disabled={deleting}
+                >
+                  {deleting ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Trash2 className="size-4" aria-hidden />
+                  )}
+                  Delete
+                </Button>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

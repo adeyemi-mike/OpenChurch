@@ -1,248 +1,3 @@
-({ ...s, customText: e.target.value }))}
-                placeholder="Tell visitors how to give — e.g. give in person on Sundays, or via our mobile app."
-                maxLength={4000}
-              />
-              <p className="text-xs text-muted-foreground">
-                Simple markdown is supported (e.g. **bold**, [links](https://…) and lists).
-              </p>
-            </div>
-          ) : null}
-
-          {/* Honest security note */}
-          <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-amber-900">
-            <ShieldCheck className="mt-0.5 size-4.5 shrink-0" aria-hidden />
-            <p className="text-sm leading-snug">
-              OpenChurch never stores card details. Direct payment-processing integrations (Paystack/Stripe
-              APIs) are planned — today this module links to your existing provider page.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Categories */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Tags className="size-4 text-muted-foreground" aria-hidden /> Giving categories
-            </CardTitle>
-            <CardDescription>
-              Funds visitors can designate — e.g. Tithes, Offerings, Missions. Changes save immediately.
-            </CardDescription>
-          </div>
-          <Button variant="outline" onClick={() => setAddOpen(true)}>
-            <Plus className="size-4" aria-hidden /> Add category
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {categories.length === 0 ? (
-            <div className="rounded-xl border border-dashed py-10 text-center">
-              <Tags className="size-7 mx-auto text-muted-foreground/50" aria-hidden />
-              <p className="mt-3 font-medium">No giving categories yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Add categories like “Tithes” or “Building Fund” so visitors can designate their giving.
-              </p>
-              <Button className="mt-4" variant="outline" onClick={() => setAddOpen(true)}>
-                <Plus className="size-4" aria-hidden /> Add the first category
-              </Button>
-            </div>
-          ) : (
-            <ul className="divide-y">
-              {categories.map((category, index) => (
-                <li key={category.id} className="py-3.5 first:pt-0 last:pb-0">
-                  <CategoryRow
-                    slug={slug}
-                    category={category}
-                    canMoveUp={index > 0}
-                    canMoveDown={index < categories.length - 1}
-                    onChanged={refreshCategories}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add a giving category</DialogTitle>
-            <DialogDescription>
-              Visitors will see this as a designation option on your giving page.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="gc-name">Name *</Label>
-              <Input
-                id="gc-name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. Building Fund"
-                autoFocus
-                maxLength={120}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="gc-desc">Description (optional)</Label>
-              <Input
-                id="gc-desc"
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="What this fund is used for"
-                maxLength={1000}
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-lg border px-3.5 py-3">
-              <Label htmlFor="gc-active" className="mb-0">
-                Show on the website
-              </Label>
-              <Switch id="gc-active" checked={newActive} onCheckedChange={setNewActive} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={addCategory} disabled={adding}>
-              {adding ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              ) : (
-                <Plus className="size-4" aria-hidden />
-              )}
-              Add category
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-
-function CategoryRow({
-  slug,
-  category,
-  canMoveUp,
-  canMoveDown,
-  onChanged,
-}: {
-  slug: string
-  category: GivingCategory
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onChanged: () => void
-}) {
-  const [name, setName] = useState(category.name)
-  const [description, setDescription] = useState(category.description ?? '')
-  const [busy, setBusy] = useState(false)
-  const dirty = name !== category.name || description !== (category.description ?? '')
-
-  async function patch(body: Record<string, unknown>, successMessage?: string) {
-    setBusy(true)
-    try {
-      await apiFetch(`/api/dashboard/${slug}/giving/categories/${category.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      })
-      if (successMessage) toast.success(successMessage)
-      onChanged()
-    } catch (err) {
-      toast.error(err instanceof ApiClientError ? err.message : 'Could not update the category.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function remove() {
-    if (!confirm(`Delete “${category.name}”? This cannot be undone.`)) return
-    setBusy(true)
-    try {
-      await apiFetch(`/api/dashboard/${slug}/giving/categories/${category.id}`, { method: 'DELETE' })
-      toast.success('Category deleted.')
-      onChanged()
-    } catch (err) {
-      toast.error(err instanceof ApiClientError ? err.message : 'Could not delete the category.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-      <div className="grid flex-1 gap-2 sm:grid-cols-[minmax(0,14rem)_1fr]">
-        <div className="flex items-center gap-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            aria-label={`Name for ${category.name}`}
-            maxLength={120}
-            className="h-9"
-          />
-          {!category.isActive ? <Badge variant="outline">Hidden</Badge> : null}
-        </div>
-        <Input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          aria-label={`Description for ${category.name}`}
-          placeholder="Description (optional)"
-          maxLength={1000}
-          className="h-9"
-        />
-      </div>
-      <div className="flex items-center justify-end gap-1.5">
-        <div className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5">
-          <Label htmlFor={`cat-active-${category.id}`} className="text-xs text-muted-foreground">
-            Active
-          </Label>
-          <Switch
-            id={`cat-active-${category.id}`}
-            checked={category.isActive}
-            disabled={busy}
-            onCheckedChange={(v) => patch({ isActive: v })}
-            aria-label={`Show ${category.name} on the website`}
-          />
-        </div>
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-9"
-          disabled={busy || !canMoveUp}
-          onClick={() => patch({ move: 'up' })}
-          aria-label={`Move ${category.name} up`}
-        >
-          <ChevronUp className="size-4" aria-hidden />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-9"
-          disabled={busy || !canMoveDown}
-          onClick={() => patch({ move: 'down' })}
-          aria-label={`Move ${category.name} down`}
-        >
-          <ChevronDown className="size-4" aria-hidden />
-        </Button>
-        {dirty ? (
-          <Button size="sm" onClick={() => patch({ name: name.trim(), description })} disabled={busy || name.trim().length < 2}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Save className="size-3.5" aria-hidden />}
-            Save
-          </Button>
-        ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          onClick={remove}
-          disabled={busy}
-          aria-label={`Delete ${category.name}`}
-        >
-          <Trash2 className="size-3.5" aria-hidden />
-        </Button>
-      </div>
-    </div>
-  )
-}
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
@@ -594,4 +349,248 @@ export function GivingManager({ slug, role }: { slug: string; role: ChurchRole }
                 id="giving-custom"
                 rows={6}
                 value={settings.customText}
-                onChange={(e) => setSettings((s) => 
+                onChange={(e) => setSettings((s) => ({ ...s, customText: e.target.value }))}
+                placeholder="Tell visitors how to give — e.g. give in person on Sundays, or via our mobile app."
+                maxLength={4000}
+              />
+              <p className="text-xs text-muted-foreground">
+                Simple markdown is supported (e.g. **bold**, [links](https://…) and lists).
+              </p>
+            </div>
+          ) : null}
+
+          {/* Honest security note */}
+          <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-amber-900">
+            <ShieldCheck className="mt-0.5 size-4.5 shrink-0" aria-hidden />
+            <p className="text-sm leading-snug">
+              OpenChurch never stores card details. Direct payment-processing integrations (Paystack/Stripe
+              APIs) are planned — today this module links to your existing provider page.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Categories */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Tags className="size-4 text-muted-foreground" aria-hidden /> Giving categories
+            </CardTitle>
+            <CardDescription>
+              Funds visitors can designate — e.g. Tithes, Offerings, Missions. Changes save immediately.
+            </CardDescription>
+          </div>
+          <Button variant="outline" onClick={() => setAddOpen(true)}>
+            <Plus className="size-4" aria-hidden /> Add category
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {categories.length === 0 ? (
+            <div className="rounded-xl border border-dashed py-10 text-center">
+              <Tags className="size-7 mx-auto text-muted-foreground/50" aria-hidden />
+              <p className="mt-3 font-medium">No giving categories yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Add categories like “Tithes” or “Building Fund” so visitors can designate their giving.
+              </p>
+              <Button className="mt-4" variant="outline" onClick={() => setAddOpen(true)}>
+                <Plus className="size-4" aria-hidden /> Add the first category
+              </Button>
+            </div>
+          ) : (
+            <ul className="divide-y">
+              {categories.map((category, index) => (
+                <li key={category.id} className="py-3.5 first:pt-0 last:pb-0">
+                  <CategoryRow
+                    slug={slug}
+                    category={category}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < categories.length - 1}
+                    onChanged={refreshCategories}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add a giving category</DialogTitle>
+            <DialogDescription>
+              Visitors will see this as a designation option on your giving page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="gc-name">Name *</Label>
+              <Input
+                id="gc-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Building Fund"
+                autoFocus
+                maxLength={120}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="gc-desc">Description (optional)</Label>
+              <Input
+                id="gc-desc"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="What this fund is used for"
+                maxLength={1000}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border px-3.5 py-3">
+              <Label htmlFor="gc-active" className="mb-0">
+                Show on the website
+              </Label>
+              <Switch id="gc-active" checked={newActive} onCheckedChange={setNewActive} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={addCategory} disabled={adding}>
+              {adding ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="size-4" aria-hidden />
+              )}
+              Add category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function CategoryRow({
+  slug,
+  category,
+  canMoveUp,
+  canMoveDown,
+  onChanged,
+}: {
+  slug: string
+  category: GivingCategory
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onChanged: () => void
+}) {
+  const [name, setName] = useState(category.name)
+  const [description, setDescription] = useState(category.description ?? '')
+  const [busy, setBusy] = useState(false)
+  const dirty = name !== category.name || description !== (category.description ?? '')
+
+  async function patch(body: Record<string, unknown>, successMessage?: string) {
+    setBusy(true)
+    try {
+      await apiFetch(`/api/dashboard/${slug}/giving/categories/${category.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      })
+      if (successMessage) toast.success(successMessage)
+      onChanged()
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : 'Could not update the category.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    if (!confirm(`Delete “${category.name}”? This cannot be undone.`)) return
+    setBusy(true)
+    try {
+      await apiFetch(`/api/dashboard/${slug}/giving/categories/${category.id}`, { method: 'DELETE' })
+      toast.success('Category deleted.')
+      onChanged()
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : 'Could not delete the category.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      <div className="grid flex-1 gap-2 sm:grid-cols-[minmax(0,14rem)_1fr]">
+        <div className="flex items-center gap-2">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            aria-label={`Name for ${category.name}`}
+            maxLength={120}
+            className="h-9"
+          />
+          {!category.isActive ? <Badge variant="outline">Hidden</Badge> : null}
+        </div>
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          aria-label={`Description for ${category.name}`}
+          placeholder="Description (optional)"
+          maxLength={1000}
+          className="h-9"
+        />
+      </div>
+      <div className="flex items-center justify-end gap-1.5">
+        <div className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5">
+          <Label htmlFor={`cat-active-${category.id}`} className="text-xs text-muted-foreground">
+            Active
+          </Label>
+          <Switch
+            id={`cat-active-${category.id}`}
+            checked={category.isActive}
+            disabled={busy}
+            onCheckedChange={(v) => patch({ isActive: v })}
+            aria-label={`Show ${category.name} on the website`}
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-9"
+          disabled={busy || !canMoveUp}
+          onClick={() => patch({ move: 'up' })}
+          aria-label={`Move ${category.name} up`}
+        >
+          <ChevronUp className="size-4" aria-hidden />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-9"
+          disabled={busy || !canMoveDown}
+          onClick={() => patch({ move: 'down' })}
+          aria-label={`Move ${category.name} down`}
+        >
+          <ChevronDown className="size-4" aria-hidden />
+        </Button>
+        {dirty ? (
+          <Button size="sm" onClick={() => patch({ name: name.trim(), description })} disabled={busy || name.trim().length < 2}>
+            {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Save className="size-3.5" aria-hidden />}
+            Save
+          </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          onClick={remove}
+          disabled={busy}
+          aria-label={`Delete ${category.name}`}
+        >
+          <Trash2 className="size-3.5" aria-hidden />
+        </Button>
+      </div>
+    </div>
+  )
+}

@@ -1,38 +1,3 @@
-px-4 py-3 text-sm"
-                  >
-                    {addError}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {/* Role explanations */}
-          <Card>
-            <CardHeader>
-              <CardTitle>What each role can do</CardTitle>
-              <CardDescription>
-                Permissions are always enforced on the server — hiding buttons is never the check itself.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid gap-3 sm:grid-cols-2">
-                {CHURCH_ROLES.map((r) => (
-                  <div key={r} className="rounded-xl border p-4">
-                    <dt className="flex items-center gap-2 text-sm font-semibold">
-                      <RoleBadge role={r} />
-                    </dt>
-                    <dd className="mt-2 text-sm leading-snug text-muted-foreground">{ROLE_DESCRIPTIONS[r]}</dd>
-                  </div>
-                ))}
-              </dl>
-            </CardContent>
-          </Card>
-        </>
-      )}
-    </div>
-  )
-}
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
@@ -349,4 +314,38 @@ export function UsersManager({
                 {addError ? (
                   <p
                     role="alert"
-                    className="rounded-xl border border-destructive/30 bg-destructive/10 text-destructive 
+                    className="rounded-xl border border-destructive/30 bg-destructive/10 text-destructive px-4 py-3 text-sm"
+                  >
+                    {addError}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {/* Role explanations */}
+          <Card>
+            <CardHeader>
+              <CardTitle>What each role can do</CardTitle>
+              <CardDescription>
+                Permissions are always enforced on the server — hiding buttons is never the check itself.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                {CHURCH_ROLES.map((r) => (
+                  <div key={r} className="rounded-xl border p-4">
+                    <dt className="flex items-center gap-2 text-sm font-semibold">
+                      <RoleBadge role={r} />
+                    </dt>
+                    <dd className="mt-2 text-sm leading-snug text-muted-foreground">{ROLE_DESCRIPTIONS[r]}</dd>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  )
+}

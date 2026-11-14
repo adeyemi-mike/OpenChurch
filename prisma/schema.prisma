@@ -1,212 +1,3 @@
----------------------------------------------------------------------
-// Events
-// ---------------------------------------------------------------------------
-
-model Event {
-  id                  String    @id @default(uuid())
-  churchId            String
-  church              Church    @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  title               String
-  description         String?
-  startsAt            DateTime
-  endsAt              DateTime?
-  locationText        String?
-  locationId          String?
-  location            Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  imageUrl            String?
-  registrationEnabled Boolean   @default(false)
-  registrationUrl     String?
-  isRecurring         Boolean   @default(false) // architecture-ready; recurrence UI is planned
-  recurrenceRule      String?
-  status              String    @default("PUBLISHED") // DRAFT | PUBLISHED | ARCHIVED
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-
-  @@index([churchId, status])
-  @@index([churchId, startsAt])
-  @@map("events")
-}
-
-// ---------------------------------------------------------------------------
-// Sermons
-// ---------------------------------------------------------------------------
-
-model SermonSeries {
-  id          String   @id @default(uuid())
-  churchId    String
-  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  title       String
-  description String?
-  imageUrl    String?
-  sermons     Sermon[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([churchId])
-  @@map("sermon_series")
-}
-
-model Sermon {
-  id            String   @id @default(uuid())
-  churchId      String
-  church        Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  title         String
-  speakerName   String
-  preachedAt    DateTime
-  description   String?
-  scriptureRef  String?
-  seriesId      String?
-  series        SermonSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
-  imageUrl      String?
-  videoUrl      String?
-  audioUrl      String?
-  notesUrl      String?
-  status        String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([churchId, status])
-  @@index([churchId, preachedAt])
-  @@map("sermons")
-}
-
-// ---------------------------------------------------------------------------
-// Media library
-// ---------------------------------------------------------------------------
-
-model MediaAsset {
-  id           String   @id @default(uuid())
-  churchId     String
-  church       Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  fileName     String
-  storedName   String   // storage key — never the raw user path
-  mimeType     String
-  kind         String   @default("IMAGE") // IMAGE | DOCUMENT | AUDIO | VIDEO
-  sizeBytes    Int
-  width        Int?
-  height       Int?
-  altText      String   @default("")
-  folder       String   @default("")
-  visibility   String   @default("PUBLIC") // PUBLIC | PRIVATE
-  uploadedById String?
-  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([churchId, kind])
-  @@map("media_assets")
-}
-
-// ---------------------------------------------------------------------------
-// Forms & enquiries
-// ---------------------------------------------------------------------------
-
-// System form types are fixed (contact, prayer, counselling, testimony,
-// registration, followup); each church can enable/disable and edit the
-// presentation copy. Sensitive types (prayer, counselling) are access-
-// restricted and never rendered on the public website.
-model Form {
-  id          String   @id @default(uuid())
-  churchId    String
-  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  type        String   // CONTACT | PRAYER | COUNSELLING | TESTIMONY | REGISTRATION | FOLLOWUP
-  title       String
-  description String?
-  isActive    Boolean  @default(true)
-  successMessage String?
-  submissions  FormSubmission[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([churchId, type])
-  @@map("forms")
-}
-
-model FormSubmission {
-  id        String   @id @default(uuid())
-  churchId  String
-  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  formId    String?
-  form      Form?    @relation(fields: [formId], references: [id], onDelete: SetNull)
-  type      String
-  name      String
-  email     String?
-  phone     String?
-  subject   String?
-  message   String
-  isSensitive Boolean @default(false)
-  status    String   @default("NEW") // NEW | IN_PROGRESS | RESOLVED | ARCHIVED
-  // We intentionally do NOT store IP addresses or user agents with
-  // submissions — only the minimal data the church needs to respond.
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([churchId, status])
-  @@index([churchId, createdAt])
-  @@map("form_submissions")
-}
-
-// ---------------------------------------------------------------------------
-// Giving
-// ---------------------------------------------------------------------------
-
-model GivingSettings {
-  id              String   @id @default(uuid())
-  churchId        String   @unique
-  church          Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  isEnabled       Boolean  @default(true)
-  // True when the configured destinations are fictional demonstration
-  // content — the public giving page then labels them as such.
-  isDemo          Boolean  @default(false)
-  mode            String   @default("EXTERNAL") // EXTERNAL | BANK | CUSTOM
-  provider        String   @default("NONE")     // NONE | PAYSTACK | STRIPE (external link mode today)
-  externalUrl     String?
-  bankDetails     String?
-  customText      String?
-  updatedAt       DateTime @updatedAt
-  createdAt       DateTime @default(now())
-
-  @@map("giving_settings")
-}
-
-model GivingCategory {
-  id          String   @id @default(uuid())
-  churchId    String
-  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  name        String
-  slug        String
-  description String?
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([churchId, slug])
-  @@index([churchId])
-  @@map("giving_categories")
-}
-
-// ---------------------------------------------------------------------------
-// Audit log
-// ---------------------------------------------------------------------------
-
-model AuditLog {
-  id         String   @id @default(uuid())
-  churchId   String? // null = platform-level action
-  church     Church?  @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  actorUserId String?
-  actor      User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorEmail String? // denormalised so the log survives user deletion
-  action     String
-  entityType String?
-  entityId   String?
-  metadata   String? // JSON — minimal, never sensitive payloads
-  createdAt  DateTime @default(now())
-
-  @@index([churchId, createdAt])
-  @@index([actorUserId])
-  @@map("audit_logs")
-}
 // OpenChurch — open-source church website platform
 // Multi-tenant relational schema.
 //
@@ -561,4 +352,212 @@ model Service {
   @@map("services")
 }
 
-// ------
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+model Event {
+  id                  String    @id @default(uuid())
+  churchId            String
+  church              Church    @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title               String
+  description         String?
+  startsAt            DateTime
+  endsAt              DateTime?
+  locationText        String?
+  locationId          String?
+  location            Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  imageUrl            String?
+  registrationEnabled Boolean   @default(false)
+  registrationUrl     String?
+  isRecurring         Boolean   @default(false) // architecture-ready; recurrence UI is planned
+  recurrenceRule      String?
+  status              String    @default("PUBLISHED") // DRAFT | PUBLISHED | ARCHIVED
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([churchId, status])
+  @@index([churchId, startsAt])
+  @@map("events")
+}
+
+// ---------------------------------------------------------------------------
+// Sermons
+// ---------------------------------------------------------------------------
+
+model SermonSeries {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  imageUrl    String?
+  sermons     Sermon[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([churchId])
+  @@map("sermon_series")
+}
+
+model Sermon {
+  id            String   @id @default(uuid())
+  churchId      String
+  church        Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  title         String
+  speakerName   String
+  preachedAt    DateTime
+  description   String?
+  scriptureRef  String?
+  seriesId      String?
+  series        SermonSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  imageUrl      String?
+  videoUrl      String?
+  audioUrl      String?
+  notesUrl      String?
+  status        String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([churchId, status])
+  @@index([churchId, preachedAt])
+  @@map("sermons")
+}
+
+// ---------------------------------------------------------------------------
+// Media library
+// ---------------------------------------------------------------------------
+
+model MediaAsset {
+  id           String   @id @default(uuid())
+  churchId     String
+  church       Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  fileName     String
+  storedName   String   // storage key — never the raw user path
+  mimeType     String
+  kind         String   @default("IMAGE") // IMAGE | DOCUMENT | AUDIO | VIDEO
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  altText      String   @default("")
+  folder       String   @default("")
+  visibility   String   @default("PUBLIC") // PUBLIC | PRIVATE
+  uploadedById String?
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([churchId, kind])
+  @@map("media_assets")
+}
+
+// ---------------------------------------------------------------------------
+// Forms & enquiries
+// ---------------------------------------------------------------------------
+
+// System form types are fixed (contact, prayer, counselling, testimony,
+// registration, followup); each church can enable/disable and edit the
+// presentation copy. Sensitive types (prayer, counselling) are access-
+// restricted and never rendered on the public website.
+model Form {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  type        String   // CONTACT | PRAYER | COUNSELLING | TESTIMONY | REGISTRATION | FOLLOWUP
+  title       String
+  description String?
+  isActive    Boolean  @default(true)
+  successMessage String?
+  submissions  FormSubmission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([churchId, type])
+  @@map("forms")
+}
+
+model FormSubmission {
+  id        String   @id @default(uuid())
+  churchId  String
+  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  formId    String?
+  form      Form?    @relation(fields: [formId], references: [id], onDelete: SetNull)
+  type      String
+  name      String
+  email     String?
+  phone     String?
+  subject   String?
+  message   String
+  isSensitive Boolean @default(false)
+  status    String   @default("NEW") // NEW | IN_PROGRESS | RESOLVED | ARCHIVED
+  // We intentionally do NOT store IP addresses or user agents with
+  // submissions — only the minimal data the church needs to respond.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([churchId, status])
+  @@index([churchId, createdAt])
+  @@map("form_submissions")
+}
+
+// ---------------------------------------------------------------------------
+// Giving
+// ---------------------------------------------------------------------------
+
+model GivingSettings {
+  id              String   @id @default(uuid())
+  churchId        String   @unique
+  church          Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  isEnabled       Boolean  @default(true)
+  // True when the configured destinations are fictional demonstration
+  // content — the public giving page then labels them as such.
+  isDemo          Boolean  @default(false)
+  mode            String   @default("EXTERNAL") // EXTERNAL | BANK | CUSTOM
+  provider        String   @default("NONE")     // NONE | PAYSTACK | STRIPE (external link mode today)
+  externalUrl     String?
+  bankDetails     String?
+  customText      String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@map("giving_settings")
+}
+
+model GivingCategory {
+  id          String   @id @default(uuid())
+  churchId    String
+  church      Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([churchId, slug])
+  @@index([churchId])
+  @@map("giving_categories")
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  churchId   String? // null = platform-level action
+  church     Church?  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  actor      User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmail String? // denormalised so the log survives user deletion
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   String? // JSON — minimal, never sensitive payloads
+  createdAt  DateTime @default(now())
+
+  @@index([churchId, createdAt])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}

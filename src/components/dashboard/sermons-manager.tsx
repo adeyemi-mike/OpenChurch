@@ -392,125 +392,7 @@ export function SermonsManager({ slug, role }: { slug: string; role: ChurchRole 
           ) : null}
         </div>
       ) : (
-        <ul classNam  </div>
-            {isAuthor ? (
-              <p className="rounded-lg bg-muted px-3 py-2.5 text-xs text-muted-foreground">
-                Submits as draft for editor review.
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="s-status">Status</Label>
-                <Select value={form.status} onValueChange={(v) => setField('status', v)}>
-                  <SelectTrigger id="s-status" className="w-full min-h-11">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PUBLISHED">Published</SelectItem>
-                    <SelectItem value="DRAFT">Draft</SelectItem>
-                    <SelectItem value="ARCHIVED">Archived</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button className="min-h-11" onClick={save} disabled={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Plus className="size-4" aria-hidden />}
-              {editing ? 'Save changes' : 'Save sermon'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Series dialog ------------------------------------------------- */}
-      <Dialog open={seriesDialogOpen} onOpenChange={setSeriesDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingSeries ? 'Edit series' : 'New series'}</DialogTitle>
-            <DialogDescription>A themed collection of sermons, e.g. a book study.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="se-title">Title *</Label>
-              <Input
-                id="se-title"
-                className="min-h-11"
-                value={seriesForm.title}
-                onChange={(e) => setSeriesField('title', e.target.value)}
-                placeholder="e.g. Romans: The Gospel of God"
-                autoFocus={!editingSeries}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="se-description">Description</Label>
-              <Textarea
-                id="se-description"
-                rows={3}
-                value={seriesForm.description}
-                onChange={(e) => setSeriesField('description', e.target.value)}
-                placeholder="What is this series about?"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="se-image">Image</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="se-image"
-                  className="min-h-11 flex-1"
-                  value={seriesForm.imageUrl}
-                  onChange={(e) => setSeriesField('imageUrl', e.target.value)}
-                  placeholder="https://… or pick from the media library"
-                  inputMode="url"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-11 shrink-0"
-                  onClick={() => setPickerTarget('series')}
-                >
-                  <ImagePlus className="size-4" aria-hidden /> Choose
-                </Button>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="min-h-11"
-              onClick={() => setSeriesDialogOpen(false)}
-              disabled={savingSeries}
-            >
-              Cancel
-            </Button>
-            <Button className="min-h-11" onClick={saveSeries} disabled={savingSeries}>
-              {savingSeries ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              ) : (
-                <Plus className="size-4" aria-hidden />
-              )}
-              {editingSeries ? 'Save changes' : 'Create series'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <MediaPicker
-        open={pickerTarget !== null}
-        slug={slug}
-        onClose={() => setPickerTarget(null)}
-        onSelect={(url) => {
-          if (pickerTarget === 'sermon') setField('imageUrl', url)
-          else if (pickerTarget === 'series') setSeriesField('imageUrl', url)
-          setPickerTarget(null)
-        }}
-      />
-    </div>
-  )
-}
-e="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {filtered.map((sermon) => (
             <li key={sermon.id} className="rounded-2xl border bg-background p-5 flex flex-col">
               <div className="flex items-start justify-between gap-3">
@@ -785,4 +667,121 @@ e="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <ImagePlus className="size-4" aria-hidden /> Choose
                 </Button>
               </div>
-          
+            </div>
+            {isAuthor ? (
+              <p className="rounded-lg bg-muted px-3 py-2.5 text-xs text-muted-foreground">
+                Submits as draft for editor review.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="s-status">Status</Label>
+                <Select value={form.status} onValueChange={(v) => setField('status', v)}>
+                  <SelectTrigger id="s-status" className="w-full min-h-11">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PUBLISHED">Published</SelectItem>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="ARCHIVED">Archived</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button className="min-h-11" onClick={save} disabled={saving}>
+              {saving ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Plus className="size-4" aria-hidden />}
+              {editing ? 'Save changes' : 'Save sermon'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Series dialog ------------------------------------------------- */}
+      <Dialog open={seriesDialogOpen} onOpenChange={setSeriesDialogOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingSeries ? 'Edit series' : 'New series'}</DialogTitle>
+            <DialogDescription>A themed collection of sermons, e.g. a book study.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="se-title">Title *</Label>
+              <Input
+                id="se-title"
+                className="min-h-11"
+                value={seriesForm.title}
+                onChange={(e) => setSeriesField('title', e.target.value)}
+                placeholder="e.g. Romans: The Gospel of God"
+                autoFocus={!editingSeries}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="se-description">Description</Label>
+              <Textarea
+                id="se-description"
+                rows={3}
+                value={seriesForm.description}
+                onChange={(e) => setSeriesField('description', e.target.value)}
+                placeholder="What is this series about?"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="se-image">Image</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="se-image"
+                  className="min-h-11 flex-1"
+                  value={seriesForm.imageUrl}
+                  onChange={(e) => setSeriesField('imageUrl', e.target.value)}
+                  placeholder="https://… or pick from the media library"
+                  inputMode="url"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 shrink-0"
+                  onClick={() => setPickerTarget('series')}
+                >
+                  <ImagePlus className="size-4" aria-hidden /> Choose
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="min-h-11"
+              onClick={() => setSeriesDialogOpen(false)}
+              disabled={savingSeries}
+            >
+              Cancel
+            </Button>
+            <Button className="min-h-11" onClick={saveSeries} disabled={savingSeries}>
+              {savingSeries ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="size-4" aria-hidden />
+              )}
+              {editingSeries ? 'Save changes' : 'Create series'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <MediaPicker
+        open={pickerTarget !== null}
+        slug={slug}
+        onClose={() => setPickerTarget(null)}
+        onSelect={(url) => {
+          if (pickerTarget === 'sermon') setField('imageUrl', url)
+          else if (pickerTarget === 'series') setSeriesField('imageUrl', url)
+          setPickerTarget(null)
+        }}
+      />
+    </div>
+  )
+}
