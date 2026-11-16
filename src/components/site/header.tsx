@@ -32,9 +32,10 @@ export function SiteHeader({ ctx }: { ctx: SiteRenderContext }) {
         <div
           className={`flex items-center justify-between gap-4 ${centered ? 'flex-col py-4 md:flex-row md:py-3' : 'py-3'}`}
         >
-          {/* Logo */}
+          {/* Logo — siteHref keeps the link clean under a custom domain
+              ("/") and correctly prefixed on the platform origin. */}
           <Link
-            href={`/church/${ctx.church.slug}`}
+            href={siteHref(ctx, '/')}
             className="flex items-center gap-2.5 min-w-0 group"
             aria-label={`${ctx.church.name} — home`}
           >

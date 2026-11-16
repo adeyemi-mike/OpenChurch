@@ -56,6 +56,13 @@ function configuredSiteUrl(): string | null {
   }
 }
 
+/** The operator-configured canonical origin, when set. Exported for
+ *  security-sensitive callers (e.g. reset-link generation) that must prefer
+ *  configuration over request headers. */
+export function trustedConfiguredOrigin(): string | null {
+  return configuredSiteUrl()
+}
+
 /**
  * Best-effort public origin from proxy headers. Returns null when the
  * headers do not describe a plausible public origin (the caller falls back

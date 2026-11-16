@@ -468,6 +468,7 @@ model Sermon {
 
   @@index([churchId, status])
   @@index([churchId, preachedAt])
+  @@index([seriesId])
   @@map("sermons")
 }
 

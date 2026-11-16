@@ -12,8 +12,9 @@ const addSchema = z.object({
   domain: z.string().trim().min(3).max(253),
 })
 
-/** Recheck-at-most-this-many stale domains while the page loads. */
-const OPPORTUNISTIC_RECHECK_LIMIT = 2
+/** Recheck-at-most-this-one stale domain while the page loads (bounded so a
+ *  provider API round trip cannot stack up on the listing latency). */
+const OPPORTUNISTIC_RECHECK_LIMIT = 1
 const STALE_AFTER_MS = 5 * 60 * 1000
 
 /**
@@ -21,21 +22,21 @@ const STALE_AFTER_MS = 5 * 60 * 1000
  * domain capability and the church's plan entitlement, so the UI can stay
  * honest about what is supported and what the plan allows).
  *
- * While loading, at most two provider-assigned domains whose last check is
- * older than 5 minutes are re-checked in the background of the request
- * (provider inspection only — the HTTPS probe runs on the explicit
- * "Check status" action and on the cron recheck).
+ * While loading, at most one provider-assigned domain whose last check is
+ * older than 5 minutes is re-checked opportunistically (provider inspection
+ * only — the HTTPS probe runs on the explicit "Check status" action and on
+ * the cron recheck).
  */
 export const GET = route(async (_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) => {
   const { slug } = await params
   const ctx = await requireChurch(slug, 'domains:manage')
 
   const provider = getDomainProvider()
-  if (provider?.configured && provider.kind === 'vercel') {
+  if (provider?.configured && provider.automated) {
     const stale = await db.churchDomain.findMany({
       where: {
         churchId: ctx.churchId,
-        provider: 'vercel',
+        provider: provider.kind,
         status: { in: ['PENDING_DNS', 'PENDING_SSL', 'ACTIVE', 'FAILED'] },
         OR: [{ lastCheckedAt: null }, { lastCheckedAt: { lt: new Date(Date.now() - STALE_AFTER_MS) } }],
       },

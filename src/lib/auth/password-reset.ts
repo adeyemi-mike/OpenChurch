@@ -59,33 +59,38 @@ export async function validatePasswordResetToken(token: string): Promise<string 
   return record.userId
 }
 
-/** Single-use consumption + password update + session revocation. */
+/**
+ * Single-use consumption + password update + session revocation.
+ *
+ * The single-use claim is enforced ATOMICALLY: the UPDATE below matches the
+ * token row only while it is still unused and unexpired, so two concurrent
+ * requests with the same token cannot both succeed — the loser claims zero
+ * rows and gets `false`. (The pre-check in `validatePasswordResetToken`
+ * exists for friendly route-level errors only; it is never the enforcement.)
+ */
 export async function consumePasswordResetToken(
   token: string,
   newPasswordHash: string
 ): Promise<boolean> {
-  const userId = await validatePasswordResetToken(token)
-  if (!userId) return false
-
   const record = await db.passwordResetToken.findUnique({
     where: { tokenHash: hashToken(token) },
-    select: { id: true },
+    select: { id: true, userId: true },
   })
   if (!record) return false
 
-  await db.$transaction([
-    // Mark the token used (single-use guarantee enforced atomically).
-    db.passwordResetToken.update({
-      where: { id: record.id },
+  return db.$transaction(async (tx) => {
+    // Atomic claim: fails for used, expired or concurrently-consumed tokens.
+    const claimed = await tx.passwordResetToken.updateMany({
+      where: { id: record.id, usedAt: null, expiresAt: { gt: new Date() } },
       data: { usedAt: new Date() },
-    }),
-    db.user.update({
-      where: { id: userId },
+    })
+    if (claimed.count !== 1) return false
+    await tx.user.update({
+      where: { id: record.userId },
       data: { passwordHash: newPasswordHash },
-    }),
+    })
     // Security requirement: revoke every existing session after a reset.
-    db.session.deleteMany({ where: { userId } }),
-  ])
-
-  return true
+    await tx.session.deleteMany({ where: { userId: record.userId } })
+    return true
+  })
 }

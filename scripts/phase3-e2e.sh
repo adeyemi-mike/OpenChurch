@@ -15,6 +15,11 @@ if [ -n "${P3_EXTERNAL_BASE:-}" ]; then
 else
 DB_COPY=/tmp/phase3-e2e.db
 cp db/custom.db "$DB_COPY"
+# Custom domains are plan-gated (free = 0 domains). Mirror what an operator
+# does for the two demo tenants before testing the domain workflow: bump
+# them to premium (DOMAIN_LIMIT_PREMIUM default 10).
+echo "UPDATE churches SET plan='premium' WHERE slug IN ('grace-community','emmanuel-parish');" \
+  | bunx prisma db execute --stdin --url="file:$DB_COPY" >/dev/null 2>&1
 PORT=3007
 BASE="http://127.0.0.1:$PORT"
 fi

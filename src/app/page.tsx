@@ -83,7 +83,7 @@ const FEATURES = [
   {
     icon: Building2,
     title: 'Multi-church by design',
-    text: 'One installation serves one church or one thousand. Strict tenant isolation keeps every church’s content, media and users separate.',
+    text: 'Built for one church or a growing network. Strict tenant isolation keeps every church’s content, media and users separate.',
   },
   {
     icon: ShieldCheck,
@@ -487,9 +487,9 @@ export default async function LandingPage() {
                         <Github className="size-4" aria-hidden /> Read the source
                       </a>
                     ) : (
-                      <a href="#opensource">
+                      <Link href="/license">
                         <Github className="size-4" aria-hidden /> Open source, MIT licensed
-                      </a>
+                      </Link>
                     )}
                   </Button>
                 </div>
@@ -501,7 +501,7 @@ export default async function LandingPage() {
                   'Documented architecture for contributors',
                   'Tenant isolation with server-enforced permissions',
                   'Translation-ready interface architecture',
-                  'Export your content at any time',
+                  'Export your church data at any time (JSON)',
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-3 rounded-xl bg-primary-foreground/10 border border-primary-foreground/15 px-4 py-3 text-sm">
                     <Check className="size-4 mt-0.5 shrink-0 text-amber-200" aria-hidden />
@@ -532,7 +532,12 @@ export default async function LandingPage() {
               <Link key={s.href} href={s.href} className="hover:text-foreground transition-colors">{s.name}</Link>
             ))}
           </nav>
-          <p className="text-xs text-muted-foreground">MIT licensed · Built for the global church</p>
+          <p className="text-xs text-muted-foreground">
+            <Link href="/license" className="hover:text-foreground transition-colors underline underline-offset-2">
+              MIT licensed
+            </Link>{' '}
+            · Built for the global church
+          </p>
         </div>
       </footer>
     </div>

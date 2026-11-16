@@ -7,17 +7,51 @@ import { slugify } from '@/lib/slug'
 import { isReservedSubdomain } from '@/lib/tenancy/resolver'
 import { starterPages } from '@/lib/sections/registry'
 import { recordAudit, AUDIT_ACTIONS } from '@/lib/audit'
+import { rateLimit, clientIp } from '@/lib/rate-limit'
 import { toJson } from '@/lib/serialization'
+
+/** How many churches one account may own/create on a deployment.
+ *  Operator-configurable via CHURCH_LIMIT_PER_USER (clamped 1–1000). */
+function churchLimitPerUser(): number {
+  const raw = Number.parseInt(process.env.CHURCH_LIMIT_PER_USER ?? '', 10)
+  if (Number.isNaN(raw)) return 10
+  return Math.min(1000, Math.max(1, raw))
+}
 
 /**
  * Church creation (end of the onboarding wizard).
  * Atomically provisions: church + settings + giving + forms + starter pages +
  * navigation + OWNER membership + optional structure (leaders, ministries,
  * services, locations).
+ *
+ * Abuse controls: rate limited per IP and capped per account — a single
+ * registered user cannot provision unlimited tenants (each church costs
+ * ~15 rows + starter pages; unbounded creation is a resource-exhaustion
+ * vector).
  */
 export const POST = route(async (req: NextRequest) => {
   const user = await getSessionUser()
   if (!user) throw new ApiError(401, 'You need to sign in to continue.', 'UNAUTHENTICATED')
+
+  const ipLimit = rateLimit(`onboard-church:${clientIp(req.headers)}`, 5, 60 * 60 * 1000)
+  if (!ipLimit.allowed) {
+    throw new ApiError(
+      429,
+      'Too many churches created from this network recently. Please try again later.',
+      'RATE_LIMITED'
+    )
+  }
+  const cap = churchLimitPerUser()
+  const owned = await db.churchMembership.count({
+    where: { userId: user.id, role: 'OWNER' },
+  })
+  if (owned >= cap) {
+    throw new ApiError(
+      403,
+      `You can create up to ${cap} churches on this deployment. Contact the platform operator if you need more.`,
+      'CHURCH_LIMIT'
+    )
+  }
 
   const input = await parseBody(req, createChurchSchema)
 

@@ -28,6 +28,8 @@ import {
   AdminPasswordReset,
   AdminDomainActions,
   AdminPlanSelect,
+  AdminDeleteChurch,
+  AdminUserTools,
 } from '@/components/dashboard/admin-console'
 import { getDomainCapability, domainsOperable } from '@/lib/domains/capability'
 import { isVercelConfigured } from '@/lib/domains/provider'
@@ -181,11 +183,14 @@ export default async function AdminPage() {
                           {new Date(church.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell className="text-right">
-                          <AdminChurchActions
-                            churchId={church.id}
-                            churchName={church.name}
-                            status={church.status}
-                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <AdminChurchActions
+                              churchId={church.id}
+                              churchName={church.name}
+                              status={church.status}
+                            />
+                            <AdminDeleteChurch churchId={church.id} slug={church.slug} name={church.name} />
+                          </div>
                         </TableCell>
                       </TableRow>
                     )
@@ -306,6 +311,23 @@ export default async function AdminPage() {
         </CardHeader>
         <CardContent>
           <AdminPasswordReset />
+        </CardContent>
+      </Card>
+
+      {/* Account tools: data export & deletion (data-subject requests) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="size-4 text-muted-foreground" aria-hidden /> Account tools
+          </CardTitle>
+          <CardDescription>
+            Export a user&apos;s account data as JSON, or permanently delete an account that no
+            longer owns any church — the mechanisms behind the privacy policy&apos;s export and
+            deletion commitments.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AdminUserTools />
         </CardContent>
       </Card>
 

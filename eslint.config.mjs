@@ -44,7 +44,15 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  // Deliverable copies (download/verified-files mirrors app sources) and
+  // tool transcripts are not part of the linted application surface.
+  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "download/**", "tool-results/**"]
+}, {
+  // One-off Node report generators (bun scripts) are CommonJS on purpose.
+  files: ["scripts/**/*.js"],
+  rules: {
+    "@typescript-eslint/no-require-imports": "off",
+  },
 }];
 
 export default eslintConfig;

@@ -404,12 +404,15 @@ async function checkOwnershipByHash(
     }
     return { ok: false, reason: 'The DNS lookup failed — try again in a moment.' }
   }
-  const { createHash } = await import('crypto')
+  const { createHash, timingSafeEqual } = await import('crypto')
+  /** Constant-time hex comparison (both digests are 64-char SHA-256 hex). */
+  const digestMatches = (a: string, b: string) =>
+    a.length === b.length && timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'))
   for (const record of records) {
     const value = (record ?? []).join('')
     if (value.startsWith('openchurch-verify=')) {
       const digest = createHash('sha256').update(value.slice('openchurch-verify='.length)).digest('hex')
-      if (digest === tokenHash) return { ok: true }
+      if (digestMatches(digest, tokenHash)) return { ok: true }
     }
   }
   return { ok: false, reason: `The TXT record at ${name} does not carry the expected value yet — DNS can take a few minutes to propagate.` }
@@ -626,7 +629,16 @@ export async function recheckDomain(input: {
     }
   }
   const provider = resolveProvider(input.provider)
-  if (!provider?.configured || provider.kind !== 'vercel') {
+  // Only AUTOMATED providers (a real API that can verify assignment) may
+  // re-check — the manual adapter can never confirm anything, and rechecking
+  // a row against a different provider than the one that assigned it would
+  // produce nonsense. Provider-agnostic: any future API-backed adapter sets
+  // `automated: true` and works here without further changes.
+  if (
+    !provider?.configured ||
+    !provider.automated ||
+    (row.provider !== null && row.provider !== provider.kind)
+  ) {
     return {
       ok: false,
       status: 503,
@@ -651,8 +663,11 @@ export async function recheckDomain(input: {
       lastCheckedAt: new Date(),
     },
   })
-  // A status that stops serving traffic must leave the host cache NOW.
-  if (row.status !== derived.status) invalidateHost(row.domain)
+  // A status change must leave the host cache NOW — including COMPANION
+  // hosts of the same church: their cached resolutions carry `primaryDomain`,
+  // and a downgraded primary must not receive 308 redirects for up to a
+  // cache TTL. Flushing all hosts is cheap (cache refills lazily) and safe.
+  if (row.status !== derived.status) invalidateAllHosts()
   await recordAudit({
     churchId: input.churchId,
     actorUserId: input.actorUserId ?? null,

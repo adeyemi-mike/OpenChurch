@@ -20,6 +20,28 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: true,
   devIndicators: false,
+  poweredByHeader: false,
+  // Baseline security headers for every response. A full CSP is deliberately
+  // NOT set here: Next.js App Router needs a nonce/strict-dynamic strategy
+  // plumbed through the proxy to avoid breaking hydration and church-site
+  // content; media files already carry their own restrictive CSP at the route
+  // level. See SECURITY.md for the hardening roadmap.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+          // Ignored by browsers over plain HTTP (dev/self-hosted), enforced on
+          // every HTTPS deployment.
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

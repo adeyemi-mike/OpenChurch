@@ -419,3 +419,35 @@ describe('capability gates: serverless hosting without provider integration', ()
     expect(after.find((d) => d.id === list[0].id)).toBeUndefined()
   })
 })
+
+describe('platform subdomain routing (wildcard DNS via PLATFORM_ROOT_DOMAIN)', () => {
+  it('resolves <slug>.<root> to the church; unknown/reserved subdomains do not', async () => {
+    process.env.PLATFORM_ROOT_DOMAIN = 'openchurch.test'
+    try {
+      // Slug subdomain → the church's site (previously DEAD CODE: the proxy
+      // treated every *.root host as platform traffic).
+      const t = await resolver.resolveChurchByHost('church-a.openchurch.test')
+      expect(t).toMatchObject({ churchId: churchA.id, slug: 'church-a', domain: null })
+
+      // Unknown subdomains and reserved labels fall through to the platform.
+      expect(await resolver.resolveChurchByHost('nobody.openchurch.test')).toBeNull()
+      expect(await resolver.resolveChurchByHost('www.openchurch.test')).toBeNull()
+    } finally {
+      delete process.env.PLATFORM_ROOT_DOMAIN
+    }
+  })
+
+  it('isPlatformHost: root and www are platform hosts, slug subdomains are NOT', () => {
+    process.env.PLATFORM_ROOT_DOMAIN = 'openchurch.test'
+    try {
+      expect(resolver.isPlatformHost('openchurch.test')).toBe(true)
+      expect(resolver.isPlatformHost('www.openchurch.test')).toBe(true)
+      // Church addresses — the proxy must attempt tenant resolution.
+      expect(resolver.isPlatformHost('church-a.openchurch.test')).toBe(false)
+      // Custom domains are never platform hosts.
+      expect(resolver.isPlatformHost('www.gracecommunity.org')).toBe(false)
+    } finally {
+      delete process.env.PLATFORM_ROOT_DOMAIN
+    }
+  })
+})

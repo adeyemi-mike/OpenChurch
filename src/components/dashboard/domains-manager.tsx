@@ -586,11 +586,8 @@ export function DomainsManager({
                         {d.status === 'ACTIVE' ? 'Re-check status' : 'Check status'}
                       </Button>
                     )}
-                    {d.status === 'FAILED' && provider?.vercelConfigured && (
-                      <Button size="sm" variant="outline" onClick={() => void act(d.id, 'connect')} disabled={busyId === d.id} className="gap-1.5">
-                        <RefreshCw className="size-3.5" aria-hidden /> Retry connection
-                      </Button>
-                    )}
+                    {/* NOTE: for FAILED domains the retry button lives in the
+                        Step 2 card above — no duplicate here. */}
                   </div>
                 )}
 

@@ -49,7 +49,7 @@ Every tenant table indexes `churchId` (+ often `status` or the natural sort). Un
 | `forms` | (`churchId`, `type`) |
 | `navigation_menus` | (`churchId`, `location`) |
 | `church_domains` | `domain` |
-| `user_accounts` | `email` |
+| `users` | `email` |
 | `sessions` | `tokenHash` (hashed session tokens only) |
 
 ## Migrations
@@ -87,7 +87,7 @@ CREATE POLICY tenant_read ON website_pages
   FOR SELECT USING (
     church_id IN (
       SELECT church_id FROM church_memberships m
-      JOIN user_accounts u ON u.id = m.user_id
+      JOIN users u ON u.id = m.user_id
       WHERE u.id = auth.uid()::text
     )
   );

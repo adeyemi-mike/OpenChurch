@@ -46,6 +46,11 @@ export type ProviderDomainStatus = {
 
 export type DomainProvider = {
   readonly kind: 'vercel' | 'manual'
+  /** True when the adapter talks to a real provider API that can VERIFY
+   *  assignment (rechecks are only meaningful for automated providers —
+   *  a manual provider can never confirm anything, so it must never be
+   *  used to downgrade a domain's status). */
+  readonly automated: boolean
   /** Attach the domain to the hosting project. */
   addDomain(domain: string): Promise<{ ok: true; providerRef?: string | null } | { ok: false; error: string }>
   /** Remove the domain from the hosting project. */
@@ -70,6 +75,7 @@ export type VercelConfig = {
 
 export class VercelDomainProvider implements DomainProvider {
   readonly kind = 'vercel' as const
+  readonly automated = true
   private token: string
   private projectId: string
   private teamId?: string
@@ -169,15 +175,30 @@ export class VercelDomainProvider implements DomainProvider {
 
     const verified = json['verified'] === true
     const verificationError = (json['verificationError'] as string | undefined) ?? null
-    const config = (json['config'] as Record<string, unknown> | undefined) ?? {}
-    const misconfigured = config['misconfigured'] === true
+    const apexName = (json['apexName'] as string | undefined) ?? domain
     const providerRef = (json['uid'] ?? json['id']) as string | undefined
 
-    // Required DNS records: derived from the provider's config payload —
-    // never hardcoded. Vercel reports `config.suggestedValues` (an array of
-    // {type, name, value}) for the domain once it is attached: an A record
-    // for apex domains and a CNAME for subdomains. Legacy field names are
-    // kept as a defensive fallback for API variations.
+    // Supplementary DNS-configuration lookup. The project-domain payload
+    // itself carries verified/verification but NOT the DNS guidance; the
+    // documented source for that is GET /v4/domains/{domain}/config
+    // (misconfigured, recommendedCNAME, recommendedIPv4). Failure of this
+    // supplementary call degrades to the documented-default records below —
+    // it never fakes a status.
+    let config: Record<string, unknown> =
+      (json['config'] as Record<string, unknown> | undefined) ?? {}
+    const cfg = await this.call('GET', `/v4/domains/${encodeURIComponent(domain)}/config`).catch(
+      () => null
+    )
+    if (cfg?.status === 200 && cfg.json && typeof cfg.json === 'object') {
+      config = { ...config, ...cfg.json }
+    }
+
+    const misconfigured = config['misconfigured'] === true
+
+    // Required DNS records, in order of truth:
+    //   1. config.suggestedValues (kept for API variations),
+    //   2. recommendedCNAME / recommendedIPv4 from /v4 …/config,
+    //   3. Vercel's published default records (labeled as such).
     const requiredRecords: ProviderDnsRecord[] = []
     const suggested = config['suggestedValues'] as { type?: string; name?: string; value?: string }[] | undefined
     if (Array.isArray(suggested)) {
@@ -193,21 +214,47 @@ export class VercelDomainProvider implements DomainProvider {
       }
     }
     if (requiredRecords.length === 0) {
-      const aRecord = (config['aRecordValue'] ?? config['aRecord']) as string | undefined
-      const cnameRecord = (config['cnameRecordValue'] ?? config['cnameRecord']) as string | undefined
-      if (cnameRecord) {
+      const flatten = (v: unknown): string[] =>
+        Array.isArray(v) ? v.map(String) : typeof v === 'string' ? [v] : []
+      const cnameValues = flatten(
+        (config['recommendedCNAME'] as { value?: unknown }[] | undefined)?.[0]?.value
+      )
+      const ipv4Values = flatten(
+        (config['recommendedIPv4'] as { value?: unknown }[] | undefined)?.[0]?.value
+      )
+      if (cnameValues.length > 0) {
         requiredRecords.push({
           type: 'CNAME',
           name: domain,
-          value: String(cnameRecord),
-          note: 'Set at your DNS provider (subdomain / www).',
+          value: cnameValues[0],
+          note: 'Recommended by the Vercel API for this domain.',
         })
-      } else if (aRecord) {
+      }
+      if (ipv4Values.length > 0) {
         requiredRecords.push({
           type: 'A',
           name: '@',
-          value: String(aRecord),
-          note: 'Set on the apex/root domain at your DNS provider.',
+          value: ipv4Values[0],
+          note: 'Recommended by the Vercel API — set on the apex/root domain at your DNS provider.',
+        })
+      }
+    }
+    if (requiredRecords.length === 0 && verified !== false) {
+      // Last resort: Vercel's long-published default records, clearly
+      // labelled so nobody mistakes them for a live API answer.
+      if (domain === apexName) {
+        requiredRecords.push({
+          type: 'A',
+          name: '@',
+          value: '76.76.21.21',
+          note: "Vercel's published default for apex domains — confirm the exact value in your Vercel dashboard.",
+        })
+      } else {
+        requiredRecords.push({
+          type: 'CNAME',
+          name: domain,
+          value: 'cname.vercel-dns.com',
+          note: "Vercel's published default for subdomains — confirm the exact value in your Vercel dashboard.",
         })
       }
     }
@@ -250,6 +297,7 @@ export class VercelDomainProvider implements DomainProvider {
  */
 export class ManualDomainProvider implements DomainProvider {
   readonly kind = 'manual' as const
+  readonly automated = false
 
   async addDomain(): Promise<{ ok: true; providerRef?: string | null } | { ok: false; error: string }> {
     // "ok" here means "no automated step failed" — the manual workflow

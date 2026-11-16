@@ -17,6 +17,7 @@ export type ChurchContext = {
     name: string
     status: string
     isPublished: boolean
+    isDemo: boolean
     onboardingCompleted: boolean
     onboardingStep: number
   }
@@ -57,6 +58,7 @@ export async function getChurchContext(
           name: true,
           status: true,
           isPublished: true,
+          isDemo: true,
           onboardingCompleted: true,
           onboardingStep: true,
         },

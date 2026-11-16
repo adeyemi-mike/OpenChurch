@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     'The terms that govern the use of OpenChurch websites, accounts and church content.',
 }
 
-const UPDATED = '10 November 2026'
+const UPDATED = '17 November 2026'
 const VERSION = '2026-11'
 
 export default function TermsPage() {
@@ -72,8 +72,9 @@ export default function TermsPage() {
               without warranty of any kind. The platform does not guarantee
               uninterrupted availability of any instance. To the maximum extent
               permitted by law, the authors and contributors are not liable for
-              damages arising from use of the software. See the LICENSE file in the
-              repository for the full licence text.
+              damages arising from use of the software. See the{' '}
+              <Link href="/license" className="text-primary underline underline-offset-2">licence page</Link>{' '}
+              or the LICENSE file in the repository for the full licence text.
             </p>
           </Section>
 

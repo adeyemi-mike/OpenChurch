@@ -13,7 +13,7 @@ The honest list. "Implemented" means it exists in this codebase, is wired to the
 - Platform Super Admin console: tenant list, counts, publish status, suspend/activate, audit trail, user password reset (revokes all sessions, audited)
 - Role-based access control (Owner / Admin / Editor / Author) enforced server-side on every route
 - Audit log of administrative actions
-- Password recovery via platform-admin reset (`scripts/promote-admin.ts` grants admin rights; reset happens in `/admin`). Self-service email reset requires SMTP — not integrated, and the UI says so honestly
+- Password recovery, three honest paths: self-service email reset when `SMTP_URL` is configured (single-use hashed 60-minute tokens, sessions revoked); platform-administrator reset in `/admin` when it is not; authenticated password change on the profile page (requires current password, revokes other sessions)
 - Demo seed: two churches (NG + UK), five users, realistic labelled content
 
 ### Website building
@@ -50,7 +50,7 @@ The honest list. "Implemented" means it exists in this codebase, is wired to the
 - Prayer & counselling submissions flagged sensitive: owner-only access, never public, no IPs/user-agents stored, no message logging
 
 ### Quality
-- Vitest suite: permissions matrix, tenant isolation (DB-level), validation schemas, rate limiter, colour contrast, slug/section utilities — 56 tests
+- Vitest suite (280+ tests): permissions matrix, tenant isolation at BOTH the service and HTTP level (real route handlers + real sessions), validation schemas, rate limiter, colour contrast, slug/section utilities, full custom-domain lifecycle
 - ESLint: zero errors/warnings; TypeScript strict: zero errors
 
 ## Planned / not yet implemented 🚧
@@ -59,12 +59,12 @@ The honest list. "Implemented" means it exists in this codebase, is wired to the
 | --- | --- |
 | Direct Paystack/Stripe API giving | Link-based giving works; provider field + secure server-side design documented (SECURITY.md) |
 | Recurring events UI | `events.isRecurring` / `recurrenceRule` columns exist; no recurrence editor yet |
-| Email delivery (invites, notifications) | Members are added by existing account email; SMTP env placeholder reserved |
+| Email delivery (invites, notifications) | SMTP password-recovery email is implemented (`SMTP_URL`); member invitations and content notifications remain manual — members are added by existing account email |
 | Visitor analytics integration | Dashboard shows an honest setup prompt; no fabricated numbers |
 | Image optimisation pipeline (derivatives, WebP) | Uploads validated + served immutable-cached; `sharp` present; derivative generation not wired |
 | Full i18n of the admin UI | Architecture ready (`lib/i18n`); English ships today |
 | Webhooks / REST API for church data | Not started |
-| Content export (one-click) | Data is portable via Prisma/SQL today; a UI export button is planned |
+| ~~Content export (one-click)~~ | **Implemented**: church owners download a complete JSON export from Website Settings → Your data; platform admins export/delete user accounts and delete churches from `/admin` |
 | Automated E2E browser suite in CI | Manual browser verification performed for this release; Playwright suite planned |
 | Sermon audio podcast feed (RSS) | Audio URL fields exist; feed generation not started |
 

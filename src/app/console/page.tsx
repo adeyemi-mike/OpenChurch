@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { requireUser, getUserMemberships } from '@/lib/auth/guards'
 
-export const metadata = { title: 'Your churches' }
+export const metadata = { title: 'Your churches', robots: { index: false } }
 
 export default async function DashboardPickerPage({
   searchParams,

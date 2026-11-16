@@ -68,6 +68,7 @@ let providerScript: ProviderScript
 
 const providerDouble = {
   kind: 'vercel' as const,
+  automated: true,
   configured: true,
   async addDomain(domain: string) {
     if (providerScript.addResult && !providerScript.addResult.ok) return providerScript.addResult

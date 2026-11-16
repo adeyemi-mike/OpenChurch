@@ -11,6 +11,7 @@ import { Church as ChurchIcon } from 'lucide-react'
 import type { SectionsList } from '@/lib/sections/types'
 import { sectionHasTemplateInstructions } from '@/lib/sections/template'
 import { resolveCanonicalOrigin, churchCanonicalUrl, getActiveDomainForHost } from '@/lib/domains/service'
+import { isDemoModeEnabled } from '@/lib/demo-mode'
 
 type Params = {
   params: Promise<{ slug: string; path?: string[] }>
@@ -118,9 +119,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       description,
       images: [image],
     },
-    robots: church.isPublished
-      ? { index: (page?.status ?? 'PUBLISHED') === 'PUBLISHED', follow: true }
-      : { index: false, follow: false },
+    robots:
+      church.isPublished && !(church.isDemo && !isDemoModeEnabled())
+        ? { index: (page?.status ?? 'PUBLISHED') === 'PUBLISHED', follow: true }
+        : { index: false, follow: false },
   }
 }
 
@@ -207,6 +209,14 @@ export default async function ChurchSitePage({ params, searchParams }: Params) {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {church.isDemo && isDemoModeEnabled() && (
+        <div
+          className="fixed bottom-3 left-3 z-50 rounded-full bg-black/80 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur"
+          role="note"
+        >
+          Demonstration church — content is fictional
+        </div>
+      )}
       <ChurchSite
         church={{
           slug: church.slug,

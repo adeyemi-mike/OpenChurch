@@ -40,7 +40,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       'Content-Type': asset.mimeType,
       'Content-Length': String(data.byteLength),
       'Content-Disposition': `inline; filename="${encodeURIComponent(asset.fileName)}"`,
-      'Cache-Control': 'public, max-age=31536000, immutable',
+      // PUBLIC assets may be cached by shared proxies/CDNs. PRIVATE assets
+      // must never be — `private` restricts caching to the end user's
+      // browser, so an authenticated fetch cannot leak into a shared cache.
+      'Cache-Control':
+        asset.visibility === 'PUBLIC'
+          ? 'public, max-age=31536000, immutable'
+          : 'private, max-age=31536000, immutable',
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     },

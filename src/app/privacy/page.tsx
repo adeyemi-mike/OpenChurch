@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     'How OpenChurch collects, stores and protects account information, church website content, forms, enquiries and prayer requests.',
 }
 
-const UPDATED = '10 November 2026'
+const UPDATED = '17 November 2026'
 const VERSION = '2026-11'
 
 export default function PrivacyPage() {
@@ -67,7 +67,7 @@ export default function PrivacyPage() {
           <Section title="4. How information is protected">
             <ul className="list-disc space-y-1.5 pl-5">
               <li>Passwords and session tokens are hashed; cookies are httpOnly and SameSite.</li>
-              <li>State-changing requests are CSRF-protected.</li>
+              <li>State-changing requests are CSRF-protected; responses carry standard security headers.</li>
               <li>Sign-in, registration and form submission are rate-limited.</li>
               <li>Dashboard APIs verify both authentication and church-scoped permissions on every request.</li>
               <li>Self-hosted deployments keep all data in the operator&apos;s own database.</li>
@@ -76,17 +76,56 @@ export default function PrivacyPage() {
 
           <Section title="5. Retention, export and deletion">
             <p>
-              Operators can delete submissions, pages, media and entire churches from
-              the dashboard; deletion removes the underlying records. Platform
-              administrators can export or delete a user account on request. Sessions
-              expire after 30 days, and password-reset tokens are single-use and
-              expire after one hour. To have your personal data removed from an
+              <strong>Export.</strong> A church owner can download a complete JSON
+              export of their church&apos;s content — pages, sermons, events,
+              ministries, leaders, giving settings, forms and enquiry submissions —
+              from Dashboard → Website Settings → Your data, at any time. A platform
+              administrator can export any user account&apos;s data (profile,
+              memberships and audit metadata — never passwords) from the platform
+              admin panel.
+            </p>
+            <p>
+              <strong>Deletion.</strong> Submissions, pages and media are deleted from
+              the church dashboard; deletion removes the underlying records. A user
+              account that does not own any church can be deleted by the platform
+              administrator on request. An entire church (with all of its data) can
+              be deleted only by the platform administrator, with typed confirmation.
+            </p>
+            <p>
+              <strong>Retention.</strong> Sessions expire after 30 days, and
+              password-reset tokens are single-use and expire after one hour;
+              expired records are pruned automatically. Operators should define
+              retention periods for enquiry data in line with their own data
+              protection obligations. To have your personal data removed from an
               instance, contact the operator of that instance; if you cannot reach
               them, use the support address below.
             </p>
           </Section>
 
-          <Section title="6. Third-party services">
+          <Section title="6. Your data protection rights">
+            <p>
+              Depending on where an instance operates, data protection law may give
+              you rights over your personal data — for example the{' '}
+              <strong>Nigeria Data Protection Act 2023</strong> (NDPA) for
+              deployments serving people in Nigeria, or the GDPR/UK GDPR in Europe.
+              Typically the deployment operator acts as data controller (and a
+              church may be a controller for the enquiries it receives).
+            </p>
+            <ul className="mt-3 list-disc space-y-1.5 pl-5">
+              <li>Right of access and portability — served through the export tools described above.</li>
+              <li>Right to rectification — edit your profile, or ask the church to correct an enquiry record.</li>
+              <li>Right to erasure — served through the deletion tools described above.</li>
+              <li>Right to object / withdraw consent — ask the receiving church to stop processing your enquiry.</li>
+            </ul>
+            <p>
+              Exercise these rights by contacting the operator of the instance. This
+              page is a technical summary written by the software&apos;s authors, not
+              legal advice; operators should obtain qualified legal review for their
+              own deployment and publish their own controller identity and contact.
+            </p>
+          </Section>
+
+          <Section title="7. Third-party services and processors">
             <p>
               OpenChurch itself does not run third-party analytics or advertising. A
               church may link to external services it has configured — for example
@@ -96,15 +135,26 @@ export default function PrivacyPage() {
               external provider, never by OpenChurch: the platform never receives or
               stores card details.
             </p>
+            <p>
+              The platform&apos;s <em>own</em> processors depend on the deployment:
+              self-hosted installations keep data on the operator&apos;s own
+              infrastructure; managed deployments may involve a hosting provider
+              (such as Vercel), a managed database provider and, where email
+              recovery is enabled, an SMTP provider. Deployment operators should
+              list the processors that apply to their instance in their own privacy
+              notice.
+            </p>
           </Section>
 
-          <Section title="7. Contact">
+          <Section title="8. Contact">
             <p>
               Questions about this policy, data export or deletion requests: contact
               the operator of the OpenChurch instance you use. Self-hosted deployments
-              configure their own support address; the open-source project is
-              maintained at its public repository (linked from the{' '}
-              <Link href="/" className="text-primary underline underline-offset-2">homepage</Link>).
+              configure their own support address. The software itself is open source
+              under the MIT licence — see the{' '}
+              <Link href="/license" className="text-primary underline underline-offset-2">licence page</Link>
+              ; when the operator has configured a repository link it appears on the{' '}
+              <Link href="/" className="text-primary underline underline-offset-2">homepage</Link>.
             </p>
           </Section>
         </div>

@@ -83,7 +83,9 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
 
 export const DELETE = route(async (_req: NextRequest, { params }: Ctx) => {
   const { slug, id } = await params
-  const ctx = await requireChurch(slug, 'content:draft')
+  // Deleting published content is an editorial act: authors can draft, but
+  // only editors and above can destroy live records (mirrors pages:manage).
+  const ctx = await requireChurch(slug, 'content:manage')
   const event = await loadEvent(ctx.churchId, id)
 
   await db.event.delete({ where: { id: event.id } })

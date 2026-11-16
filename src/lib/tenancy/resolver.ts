@@ -147,6 +147,12 @@ export function canonicalRedirectFor(
  * Is this hostname one of the deployment's OWN origins (never a church
  * domain)? Used by the proxy to decide whether host-based tenant routing
  * should even be attempted for a request.
+ *
+ * NOTE: subdomains of PLATFORM_ROOT_DOMAIN are deliberately NOT treated as
+ * platform hosts — `<slug>.<root-domain>` is a church address (wildcard
+ * subdomain routing, see resolveChurchByHost). Unknown or reserved
+ * subdomains fall through the resolver's negative cache and land on the
+ * platform site, so this stays safe while making subdomain addressing work.
  */
 export function isPlatformHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '')
@@ -160,8 +166,10 @@ export function isPlatformHost(hostname: string): boolean {
       /* ignore malformed */
     }
   }
+  // The platform's own root domain (and its www) is platform traffic.
+  // Subdomains are church addresses — resolved by resolveChurchByHost.
   const root = process.env.PLATFORM_ROOT_DOMAIN?.trim().toLowerCase()
-  if (root && (h === root || h.endsWith(`.${root}`))) return true
+  if (root && (h === root || h === `www.${root}`)) return true
   // Local/dev and preview hosts are platform traffic.
   if (!h.includes('.') || h === 'localhost' || h.endsWith('.localhost')) return true
   return false

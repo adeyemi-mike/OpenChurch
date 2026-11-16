@@ -50,7 +50,7 @@ Password for all: `Demo1234!`
 
 ## Password recovery
 
-OpenChurch does not require email delivery (SMTP is optional and not yet integrated). The supported recovery path is therefore **platform-administrator reset**:
+OpenChurch does not require email delivery. Self-service email recovery works as soon as `SMTP_URL` is configured (see `.env.example`); without SMTP the supported recovery path is **platform-administrator reset**:
 
 1. Register your own account through the website.
 2. Grant yourself platform-admin rights from the server:

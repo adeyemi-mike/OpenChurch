@@ -4,7 +4,7 @@
 
 OpenChurch is a free, open-source platform that gives any church — in any country, denomination or language — a professional, accessible website it can build and manage **without a developer**.
 
-One installation can serve **one church or one thousand**: multi-tenancy, strict data isolation and role-based permissions are built into the core, not bolted on.
+Multi-tenancy is built into the core, not bolted on: one installation serves a single church or a growing network, with strict data isolation and role-based permissions enforced on the server.
 
 ```bash
 git clone <repo> openchurch && cd openchurch

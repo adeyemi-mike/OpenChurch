@@ -16,7 +16,7 @@
 │   (platform)         /  /login  /register  /onboarding           │
 │   (console)        /console/[slug]/…  (guarded server pages) │
 │   (public sites)     /church/[slug]/[[...path]]  + /preview      │
-│   (api)              /api/auth/*  /api/console/[slug]/*        │
+│   (api)              /api/auth/*  /api/dashboard/[slug]/*        │
 │                      /api/media/[id]/file  /api/public/[slug]/*   │
 │                      /api/onboarding/*  /api/admin               │
 ├──────────────────────────────────────────────────────────────────┤
@@ -41,7 +41,7 @@
 │   dashboard/        manager pages (client) + sidebar + shared     │
 │   onboarding/       wizard + colour/image inputs                  │
 ├──────────────────────────────────────────────────────────────────┤
-│ prisma/          schema.prisma (21 models) · seed.ts             │
+│ prisma/          schema.prisma (22 models) · seed.ts             │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -50,7 +50,7 @@
 ### Church admin edits a page
 
 ```
-Browser → PATCH /api/console/[slug]/pages/[id]
+Browser → PATCH /api/dashboard/[slug]/pages/[id]
         → route() wrapper: CSRF origin check, error boundary
         → requireChurch(slug, 'pages:draft')
             → getSessionUser() (cookie → hashed token → session row)

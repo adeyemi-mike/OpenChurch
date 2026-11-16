@@ -37,7 +37,7 @@ docker compose exec app bun run db:seed        # optional demo content
 
 Production checklist:
 
-- [ ] `NEXT_PUBLIC_APP_URL` set to your HTTPS origin (no trailing slash)
+- [ ] `NEXT_PUBLIC_SITE_URL` set to your HTTPS origin (no trailing slash; `NEXT_PUBLIC_APP_URL` is a legacy alias)
 - [ ] `DATABASE_URL` points at PostgreSQL
 - [ ] `npm run use:postgres` executed (provider flip) — or verify `prisma/schema.prisma` says `postgresql`
 - [ ] Persistent volumes for the database **and** `./storage`
@@ -69,7 +69,7 @@ migrations and runs the Next.js build — no manual schema edits.
    | --- | --- |
    | `DATABASE_URL` | Neon **pooled** URL + `&pgbouncer=true&connection_limit=10` |
    | `DIRECT_URL` | Neon **direct** URL |
-   | `NEXT_PUBLIC_APP_URL` | your final Vercel/custom domain, `https://…` |
+   | `NEXT_PUBLIC_SITE_URL` | your final Vercel/custom domain, `https://…` |
    | `DEMO_MODE` | `false` (or leave unset — production default is off) |
 3. Deploy. The first build creates the full schema via `prisma migrate deploy`
    (migrations are committed in `prisma/migrations`, PostgreSQL dialect).
@@ -96,8 +96,8 @@ Notes and honest limits:
 | --- | --- | --- |
 | `DATABASE_URL` | yes | Prisma connection string (SQLite file or PostgreSQL) |
 | `DIRECT_URL` | serverless Postgres | Direct (non-pooled) URL used by `prisma migrate deploy` — see scripts/vercel-build.sh |
-| `NEXT_PUBLIC_APP_URL` | recommended | Canonical URLs, sitemaps, Open Graph (`NEXT_PUBLIC_SITE_URL` takes precedence if set) |
-| `DEPLOYMENT_MODE` | no (`PATH`) | `PATH` or `HOST` routing (below) |
+| `NEXT_PUBLIC_SITE_URL` | recommended | Canonical URLs, sitemaps, Open Graph, trusted password-reset links. Legacy alias: `NEXT_PUBLIC_APP_URL` |
+| `CRON_SECRET` | **required in production** | Bearer secret for the scheduled maintenance endpoint (`GET /api/cron/domains`: provider-domain rechecks + auth-artifact pruning). Without it the endpoint is DISABLED (503) in production; Vercel Cron injects the header automatically |
 | `PLATFORM_ROOT_DOMAIN` | HOST mode only | e.g. `openchurch.example` |
 | `STORAGE_PATH` | no (`./storage/uploads`) | Media library location |
 | `VERCEL_TOKEN` | managed hosting, automated domains | Enables automated Vercel domain assignment (with `VERCEL_PROJECT_ID`) |
@@ -105,7 +105,7 @@ Notes and honest limits:
 | `VERCEL_TEAM_ID` | no | Vercel team scope, when the project belongs to a team |
 | `CUSTOM_DOMAIN_MODE` | no (auto-derived) | Operator override for hosts the platform cannot auto-detect: `auto` (requires the provider variables above), `manual` (self-hosted workflow), `off` (domains unavailable) — see "Custom domains" below |
 | `DOMAIN_LIMIT_FREE` / `DOMAIN_LIMIT_PAID` / `DOMAIN_LIMIT_PREMIUM` | no (0 / 1 / 10) | Custom-domain limits per subscription plan — see "Domain plans & limits" |
-| `CRON_SECRET` | recommended on managed hosting | Bearer secret required by the scheduled domain recheck (`GET /api/cron/domains`); Vercel Cron injects it automatically |
+| `CRON_SECRET` | **required in production** | See above — the cron endpoint refuses to run unauthenticated in production |
 
 Optional integrations (none required; see `.env.example`): Paystack/Stripe keys for future direct integrations, SMTP for email, analytics.
 
@@ -141,7 +141,7 @@ Managed hosting (Vercel):
    `VERCEL_TOKEN`, `VERCEL_PROJECT_ID` (from the project settings page) and,
    when the project belongs to a team, `VERCEL_TEAM_ID`. These are never
    exposed to the browser — only the boolean "integration configured" is.
-3. Optionally set `CRON_SECRET` (e.g. `openssl rand -hex 24`). Vercel Cron
+3. Set `CRON_SECRET` (e.g. `openssl rand -hex 24`) — required in production; without it the cron endpoint answers 503. Vercel Cron
    (see below) then authenticates automatically.
 4. Nothing else: every church — existing and future — can now connect its
    own domains from its dashboard. The operator never configures churches
@@ -228,7 +228,8 @@ immediately — provider failures never leave misleading active records.
   `GET /api/cron/domains` (hourly on Vercel Pro; **the Hobby plan only runs
   cron jobs once a day**, so interactive rechecks are the primary path
   there). The endpoint re-checks up to 25 stale domains per run, protected
-  by `CRON_SECRET` when set. Self-hosted operators can call it from their
+  by `CRON_SECRET` (required in production — the endpoint is disabled without
+  it). Self-hosted operators can call it from their
   own scheduler: `curl -H "Authorization: Bearer $CRON_SECRET"
   https://your-host/api/cron/domains`.
 - **Cache safety**: host→tenant lookups are cached for 60s per instance
@@ -278,7 +279,7 @@ Churches are served at `https://your-host/church/<slug>`. Zero DNS work. This is
 
 For `grace.openchurch.example` or `www.gracecommunity.org`:
 
-1. Set `DEPLOYMENT_MODE=HOST` and `PLATFORM_ROOT_DOMAIN=openchurch.example`.
+1. Set `PLATFORM_ROOT_DOMAIN=openchurch.example` (subdomain routing is enabled by this variable plus wildcard DNS — there is no separate routing-mode switch).
 2. Add a wildcard DNS record `*.openchurch.example` → your server.
 3. Configure your reverse proxy to forward **all** hosts to the app (the Host header is preserved), with a wildcard TLS certificate for your root domain.
 4. The resolver (`src/lib/tenancy/resolver.ts`) maps the Host header to a church:
@@ -298,6 +299,7 @@ church as the only tenant.
 
 - **Platform admin console** (`/admin`, `isPlatformAdmin` users): tenant list, member/page counts, publish status, suspend/activate with audit trail.
 - **Tenant suspension** freezes a church's dashboard and public site (owners still see a suspension notice).
+- **Data-subject tools**: platform admins export or delete user accounts (deletion is refused while the account owns a church) and can delete an entire church with typed slug confirmation — provider-assigned domains are removed from the hosting provider first (failures are reported honestly), media files are deleted from storage, and every tenant row cascades. Church owners export their own data from Website Settings → Your data.
 - **Backups**: back up the database **and** the storage volume together. Tenant deletion cascades all tenant data.
 - **Scaling note**: the in-memory rate limiter is per-instance. For multiple app replicas, front public endpoints with a shared limiter (or swap in the Redis driver of your choosing — `lib/rate-limit.ts` has a stable interface).
 

@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react'
 import { requireChurchContext } from '@/lib/auth/guards'
 import { can } from '@/lib/permissions'
 import { WebsiteSettings } from '@/components/dashboard/website-settings'
+import { ExportCard } from '@/components/dashboard/export-card'
 import { churchBaseUrl } from '@/lib/tenancy/resolver'
 import { getDomainCapability } from '@/lib/domains/capability'
 
@@ -29,16 +30,19 @@ export default async function WebsiteSettingsPage({ params }: { params: Promise<
     (await db.churchSettings.create({ data: { churchId: ctx.church.id } }))
 
   return (
-    <WebsiteSettings
-      slug={slug}
-      isPublished={ctx.church.isPublished}
-      platformUrl={churchBaseUrl(ctx.church.slug)}
-      domainMode={getDomainCapability().mode}
-      initial={{
-        defaultSeoTitle: settings.defaultSeoTitle ?? '',
-        defaultSeoDescription: settings.defaultSeoDescription ?? '',
-        mapEmbedUrl: settings.mapEmbedUrl ?? '',
-      }}
-    />
+    <>
+      <WebsiteSettings
+        slug={slug}
+        isPublished={ctx.church.isPublished}
+        platformUrl={churchBaseUrl(ctx.church.slug)}
+        domainMode={getDomainCapability().mode}
+        initial={{
+          defaultSeoTitle: settings.defaultSeoTitle ?? '',
+          defaultSeoDescription: settings.defaultSeoDescription ?? '',
+          mapEmbedUrl: settings.mapEmbedUrl ?? '',
+        }}
+      />
+      {can(ctx.role, 'church:manage_settings') && <ExportCard slug={slug} />}
+    </>
   )
 }

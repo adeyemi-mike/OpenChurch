@@ -19,8 +19,10 @@ import { resolveChurchByHost, isPlatformHost, canonicalRedirectFor } from '@/lib
  *
  *      - Only ACTIVE domains resolve (verification is enforced at the
  *        resolver; unverified/removed hostnames never select a tenant).
- *      - Platform-owned hosts (the configured origin, PLATFORM_ROOT_DOMAIN
- *        subdomains, localhost) are never rewritten.
+ *      - Platform-owned hosts (the configured origin, the platform root
+ *        domain, localhost) are never rewritten. Subdomains of the platform
+ *        root domain (<slug>.<root>) ARE resolvable church addresses when
+ *        wildcard DNS is configured — see resolveChurchByHost.
  *      - Platform application paths (/console, /api, /login, …) are never
  *        rewritten even on a church domain.
  *      - /sitemap.xml and /robots.txt on a church domain serve that

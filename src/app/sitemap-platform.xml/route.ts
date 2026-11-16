@@ -12,6 +12,7 @@ export async function GET(req: Request) {
     { loc: `${origin}/`, priority: '1.0' },
     { loc: `${origin}/privacy`, priority: '0.3' },
     { loc: `${origin}/terms`, priority: '0.3' },
+    { loc: `${origin}/license`, priority: '0.2' },
   ]
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>

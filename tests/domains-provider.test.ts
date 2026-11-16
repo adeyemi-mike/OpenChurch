@@ -62,34 +62,66 @@ describe('VercelDomainProvider.addDomain', () => {
 })
 
 describe('VercelDomainProvider.inspectDomain', () => {
-  it('parses a fully verified, configured subdomain (CNAME from the provider)', async () => {
+  it('parses a fully verified, configured subdomain (CNAME from /v4 config)', async () => {
     const p = new VercelDomainProvider({
       ...okCfg,
-      fetchImpl: makeFetch(() => ({
-        status: 200,
-        body: { verified: true, config: { misconfigured: false, cnameRecordValue: 'cname.vercel-dns.com' } },
-      })),
+      fetchImpl: makeFetch((url) =>
+        url.includes('/v4/domains/')
+          ? {
+              status: 200,
+              body: { misconfigured: false, recommendedCNAME: [{ rank: 1, value: 'cname.vercel-dns.com' }] },
+            }
+          : { status: 200, body: { verified: true, apexName: 'd.example' } }
+      ),
     })
     const s = await p.inspectDomain('www.d.example')
     expect(s.assigned).toBe(true)
     expect(s.dnsConfigured).toBe(true)
     expect(s.requiredRecords).toEqual([
-      { type: 'CNAME', name: 'www.d.example', value: 'cname.vercel-dns.com', note: 'Set at your DNS provider (subdomain / www).' },
+      { type: 'CNAME', name: 'www.d.example', value: 'cname.vercel-dns.com', note: 'Recommended by the Vercel API for this domain.' },
     ])
   })
 
-  it('parses an apex domain A record from the provider config', async () => {
+  it('parses an apex domain A record from the /v4 config endpoint', async () => {
     const p = new VercelDomainProvider({
       ...okCfg,
-      fetchImpl: makeFetch(() => ({
-        status: 200,
-        body: { verified: true, config: { misconfigured: false, aRecordValue: '76.76.21.21' } },
-      })),
+      fetchImpl: makeFetch((url) =>
+        url.includes('/v4/domains/')
+          ? { status: 200, body: { misconfigured: false, recommendedIPv4: [{ rank: 1, value: '76.76.21.21' }] } }
+          : { status: 200, body: { verified: true, apexName: 'd.example' } }
+      ),
     })
     const s = await p.inspectDomain('d.example')
     expect(s.assigned).toBe(true)
     expect(s.requiredRecords[0].type).toBe('A')
     expect(s.requiredRecords[0].name).toBe('@')
+    expect(s.requiredRecords[0].value).toBe('76.76.21.21')
+  })
+
+  it("falls back to Vercel's published default records (clearly labelled) when the API returns none", async () => {
+    const p = new VercelDomainProvider({
+      ...okCfg,
+      fetchImpl: makeFetch((url) =>
+        url.includes('/v4/domains/')
+          ? { status: 200, body: { misconfigured: false } }
+          : { status: 200, body: { verified: true, apexName: 'd.example' } }
+      ),
+    })
+    const apex = await p.inspectDomain('d.example')
+    expect(apex.requiredRecords[0]).toMatchObject({ type: 'A', name: '@', value: '76.76.21.21' })
+    expect(apex.requiredRecords[0].note).toContain('published default')
+
+    const p2 = new VercelDomainProvider({
+      ...okCfg,
+      fetchImpl: makeFetch((url) =>
+        url.includes('/v4/domains/')
+          ? { status: 200, body: { misconfigured: false } }
+          : { status: 200, body: { verified: true, apexName: 'd.example' } }
+      ),
+    })
+    const sub = await p2.inspectDomain('www.d.example')
+    expect(sub.requiredRecords[0]).toMatchObject({ type: 'CNAME', name: 'www.d.example', value: 'cname.vercel-dns.com' })
+    expect(sub.requiredRecords[0].note).toContain('published default')
   })
 
   it('reports unassigned AND missing for HTTP 404', async () => {
@@ -149,6 +181,21 @@ describe('VercelDomainProvider.inspectDomain', () => {
     expect(types).toContain('TXT') // Vercel's own verification record is surfaced
   })
 
+  it('degrades honestly when the supplementary /v4 config call fails', async () => {
+    const p = new VercelDomainProvider({
+      ...okCfg,
+      fetchImpl: makeFetch((url) =>
+        url.includes('/v4/domains/')
+          ? { status: 500, body: {} }
+          : { status: 200, body: { verified: true, apexName: 'd.example' } }
+      ),
+    })
+    const s = await p.inspectDomain('d.example')
+    expect(s.assigned).toBe(true)
+    // No config data → the published default record, labelled as such.
+    expect(s.requiredRecords[0].note).toContain('published default')
+  })
+
   it('reports misconfiguration honestly (no green state)', async () => {
     const p = new VercelDomainProvider({
       ...okCfg,
@@ -180,6 +227,7 @@ describe('ManualDomainProvider', () => {
   it('provides manual instructions and never claims automated truth', async () => {
     const p = new ManualDomainProvider()
     expect(p.kind).toBe('manual')
+    expect(p.automated).toBe(false)
     const s = await p.inspectDomain('d.example')
     expect(s.assigned).toBe(false)
     expect(s.requiredRecords[0].note).toContain('no hosting-provider API')

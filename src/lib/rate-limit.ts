@@ -1,9 +1,11 @@
 /**
- * Simple in-memory sliding-window rate limiter for public endpoints
+ * Simple in-memory FIXED-WINDOW rate limiter for public endpoints
  * (form submissions, login attempts).
  *
- * Suitable for a single-instance deployment. For horizontal scaling swap the
- * store for Redis — the interface (`rateLimit(key, max, windowMs)`) stays the
+ * The window starts at the first hit and resets wholesale when it elapses,
+ * so a caller can burst up to ~2x `max` across a window boundary. Suitable
+ * for a single-instance deployment. For horizontal scaling swap the store
+ * for Redis — the interface (`rateLimit(key, max, windowMs)`) stays the
  * same. Documented in docs/DEPLOYMENT.md.
  */
 
