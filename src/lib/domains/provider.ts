@@ -28,12 +28,18 @@ export type ProviderDnsRecord = {
 export type ProviderDomainStatus = {
   /** Provider confirmed the domain is assigned to this project. */
   assigned: boolean
+  /** The domain does NOT exist on the project (provider 404) — distinct
+   *  from "attached but not yet verified", so rechecks can distinguish a
+   *  pending setup from a provider that lost the domain. */
+  missing: boolean
   /** Provider confirmed DNS configuration (or reports misconfigured). */
   dnsConfigured: boolean | null
   /** Human-readable problem from the provider, if any. */
   error: string | null
   /** Records the church must set at their registrar, per the provider. */
   requiredRecords: ProviderDnsRecord[]
+  /** The provider's own identifier for this domain (e.g. Vercel uid). */
+  providerRef: string | null
   /** Raw status summary persisted for diagnostics (JSON, never trusted). */
   raw: Record<string, unknown>
 }
@@ -41,7 +47,7 @@ export type ProviderDomainStatus = {
 export type DomainProvider = {
   readonly kind: 'vercel' | 'manual'
   /** Attach the domain to the hosting project. */
-  addDomain(domain: string): Promise<{ ok: true } | { ok: false; error: string }>
+  addDomain(domain: string): Promise<{ ok: true; providerRef?: string | null } | { ok: false; error: string }>
   /** Remove the domain from the hosting project. */
   removeDomain(domain: string): Promise<{ ok: true } | { ok: false; error: string }>
   /** Inspect the provider's view of the domain. */
@@ -100,11 +106,16 @@ export class VercelDomainProvider implements DomainProvider {
     return { status: res.status, json }
   }
 
-  async addDomain(domain: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  async addDomain(domain: string): Promise<{ ok: true; providerRef?: string | null } | { ok: false; error: string }> {
     const { status, json } = await this.call('POST', `/v10/projects/${this.projectId}/domains`, {
       name: domain,
     })
-    if (status === 200) return { ok: true }
+    if (status === 200) {
+      // Vercel returns the domain object incl. its uid — capture it as the
+      // provider reference (never fabricated when absent).
+      const uid = (json['uid'] ?? json['id']) as string | undefined
+      return { ok: true, providerRef: typeof uid === 'string' && uid ? uid : null }
+    }
     if (status === 409) {
       const err = (json['error'] as { message?: string } | undefined)?.message
       return {
@@ -136,18 +147,22 @@ export class VercelDomainProvider implements DomainProvider {
     if (status === 404) {
       return {
         assigned: false,
+        missing: true,
         dnsConfigured: null,
-        error: 'The domain is not attached to the Vercel project yet.',
+        error: 'The domain is not attached to the Vercel project.',
         requiredRecords: [],
+        providerRef: null,
         raw: { status },
       }
     }
     if (status !== 200) {
       return {
         assigned: false,
+        missing: false,
         dnsConfigured: null,
         error: `Vercel status check failed (HTTP ${status}).`,
         requiredRecords: [],
+        providerRef: null,
         raw: { status },
       }
     }
@@ -156,27 +171,45 @@ export class VercelDomainProvider implements DomainProvider {
     const verificationError = (json['verificationError'] as string | undefined) ?? null
     const config = (json['config'] as Record<string, unknown> | undefined) ?? {}
     const misconfigured = config['misconfigured'] === true
+    const providerRef = (json['uid'] ?? json['id']) as string | undefined
 
     // Required DNS records: derived from the provider's config payload —
-    // never hardcoded. Vercel reports an A record for apex domains and a
-    // CNAME for subdomains when the domain is attached.
+    // never hardcoded. Vercel reports `config.suggestedValues` (an array of
+    // {type, name, value}) for the domain once it is attached: an A record
+    // for apex domains and a CNAME for subdomains. Legacy field names are
+    // kept as a defensive fallback for API variations.
     const requiredRecords: ProviderDnsRecord[] = []
-    const aRecord = (config['aRecordValue'] ?? config['aRecord']) as string | undefined
-    const cnameRecord = (config['cnameRecordValue'] ?? config['cnameRecord']) as string | undefined
-    if (cnameRecord) {
-      requiredRecords.push({
-        type: 'CNAME',
-        name: domain,
-        value: String(cnameRecord),
-        note: 'Set at your DNS provider (subdomain / www).',
-      })
-    } else if (aRecord) {
-      requiredRecords.push({
-        type: 'A',
-        name: '@',
-        value: String(aRecord),
-        note: 'Set on the apex/root domain at your DNS provider.',
-      })
+    const suggested = config['suggestedValues'] as { type?: string; name?: string; value?: string }[] | undefined
+    if (Array.isArray(suggested)) {
+      for (const rec of suggested) {
+        if (rec?.type && rec.name !== undefined && rec.value !== undefined) {
+          requiredRecords.push({
+            type: String(rec.type),
+            name: String(rec.name),
+            value: String(rec.value),
+            note: rec.type === 'A' ? 'Set on the apex/root domain at your DNS provider.' : 'Set at your DNS provider.',
+          })
+        }
+      }
+    }
+    if (requiredRecords.length === 0) {
+      const aRecord = (config['aRecordValue'] ?? config['aRecord']) as string | undefined
+      const cnameRecord = (config['cnameRecordValue'] ?? config['cnameRecord']) as string | undefined
+      if (cnameRecord) {
+        requiredRecords.push({
+          type: 'CNAME',
+          name: domain,
+          value: String(cnameRecord),
+          note: 'Set at your DNS provider (subdomain / www).',
+        })
+      } else if (aRecord) {
+        requiredRecords.push({
+          type: 'A',
+          name: '@',
+          value: String(aRecord),
+          note: 'Set on the apex/root domain at your DNS provider.',
+        })
+      }
     }
     // Vercel's own project-assignment verification record, when required.
     const verification = json['verification'] as { type?: string; domain?: string; value?: string }[] | undefined
@@ -195,9 +228,11 @@ export class VercelDomainProvider implements DomainProvider {
 
     return {
       assigned: verified,
+      missing: false,
       dnsConfigured: misconfigured ? false : verified ? true : null,
       error: verificationError ?? (misconfigured ? 'Vercel reports the DNS configuration is not correct yet.' : null),
       requiredRecords,
+      providerRef: typeof providerRef === 'string' && providerRef ? providerRef : null,
       raw: { status, verified, misconfigured, verificationError },
     }
   }
@@ -216,10 +251,10 @@ export class VercelDomainProvider implements DomainProvider {
 export class ManualDomainProvider implements DomainProvider {
   readonly kind = 'manual' as const
 
-  async addDomain(): Promise<{ ok: true } | { ok: false; error: string }> {
+  async addDomain(): Promise<{ ok: true; providerRef?: string | null } | { ok: false; error: string }> {
     // "ok" here means "no automated step failed" — the manual workflow
     // simply has nothing to automate. The domain stays owner-confirmed.
-    return { ok: true }
+    return { ok: true, providerRef: null }
   }
 
   async removeDomain(): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -229,6 +264,7 @@ export class ManualDomainProvider implements DomainProvider {
   async inspectDomain(domain: string): Promise<ProviderDomainStatus> {
     return {
       assigned: false,
+      missing: false,
       dnsConfigured: null,
       error: null,
       requiredRecords: [
@@ -239,6 +275,7 @@ export class ManualDomainProvider implements DomainProvider {
           note: 'This deployment has no hosting-provider API — point the domain at your server and configure your reverse proxy. Ask your administrator.',
         },
       ],
+      providerRef: null,
       raw: { mode: 'manual', domain },
     }
   }

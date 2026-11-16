@@ -9,10 +9,11 @@ import {
   setPrimaryDomain,
   removeDomain,
   regenerateToken,
+  recheckDomain,
 } from '@/lib/domains/service'
 
 const actionSchema = z.object({
-  action: z.enum(['verify', 'connect', 'confirm-manual', 'set-primary', 'regenerate-token']),
+  action: z.enum(['verify', 'connect', 'confirm-manual', 'set-primary', 'regenerate-token', 'recheck']),
 })
 
 /**
@@ -41,6 +42,11 @@ export const POST = route(
       }
       case 'connect': {
         const result = await connectDomain({ churchId: ctx.churchId, domainId, ...actor })
+        if (!result.ok) throw new ApiError(result.status, result.error, result.code)
+        return ok({ domain: result.domain })
+      }
+      case 'recheck': {
+        const result = await recheckDomain({ churchId: ctx.churchId, domainId, ...actor })
         if (!result.ok) throw new ApiError(result.status, result.error, result.code)
         return ok({ domain: result.domain })
       }

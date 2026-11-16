@@ -20,12 +20,26 @@ import 'server-only'
 const TTL_MS = 60_000
 const MAX_ENTRIES = 500
 
-type Resolved = { churchId: string; slug: string }
-type Entry = { value: Resolved | null; expiresAt: number }
+/**
+ * The cached resolution — the resolver's full result (custom-domain match,
+ * primary-domain info) so the proxy can enforce canonical-host redirects
+ * without a second lookup. Subdomain resolutions carry null extras.
+ */
+export type HostResolution = {
+  churchId: string
+  slug: string
+  /** Matched custom-domain hostname (null for platform-subdomain matches). */
+  domain: string | null
+  /** True when the matched host is the church's primary (canonical) domain. */
+  isPrimaryDomain: boolean
+  /** The church's primary ACTIVE domain, when one exists. */
+  primaryDomain: string | null
+}
+type Entry = { value: HostResolution | null; expiresAt: number }
 
 const cache = new Map<string, Entry>()
 
-export function getCachedHostResolution(host: string): Resolved | null | undefined {
+export function getCachedHostResolution(host: string): HostResolution | null | undefined {
   const key = host.toLowerCase()
   const hit = cache.get(key)
   if (!hit) return undefined
@@ -36,7 +50,7 @@ export function getCachedHostResolution(host: string): Resolved | null | undefin
   return hit.value
 }
 
-export function setCachedHostResolution(host: string, value: Resolved | null): void {
+export function setCachedHostResolution(host: string, value: HostResolution | null): void {
   const key = host.toLowerCase()
   if (cache.size >= MAX_ENTRIES && !cache.has(key)) {
     // Simple eviction: drop the oldest key (Map preserves insertion order).

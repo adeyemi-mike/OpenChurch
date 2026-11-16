@@ -42,11 +42,11 @@ beforeAll(async () => {
   svc = await import('@/lib/domains/service')
   resolver = await import('@/lib/tenancy/resolver')
   churchA = await db.church.create({
-    data: { slug: 'church-a', name: 'Church A', country: 'NG', settings: { create: {} } },
+    data: { slug: 'church-a', name: 'Church A', country: 'NG', plan: 'premium', settings: { create: {} } },
     select: { id: true, slug: true },
   })
   churchB = await db.church.create({
-    data: { slug: 'church-b', name: 'Church B', country: 'GB', settings: { create: {} } },
+    data: { slug: 'church-b', name: 'Church B', country: 'GB', plan: 'premium', settings: { create: {} } },
     select: { id: true, slug: true },
   })
   const actorUser = await db.user.create({
@@ -126,28 +126,32 @@ describe('domain claim exclusivity', () => {
 describe('verification (stubbed DNS)', () => {
   let domainId = ''
 
-  it('stays PENDING when DNS has no record yet', async () => {
+  it('marks VERIFICATION_FAILED when DNS has no record yet (retryable)', async () => {
     const list = await svc.listDomains(churchA.id)
     domainId = list[0].id
     dnsRecords.delete('_openchurch-verify.www.gracecommunity.org')
     const res = await svc.verifyDomain({ churchId: churchA.id, domainId, ...actor, resolver: dnsStub })
     expect(res.ok).toBe(true)
     if (res.ok) {
-      expect(res.domain.status).toBe('PENDING')
+      expect(res.domain.status).toBe('VERIFICATION_FAILED')
       expect(res.domain.failureReason).toContain('No TXT record')
     }
   })
 
-  it('rejects a wrong token value', async () => {
+  it('rejects a wrong token value (VERIFICATION_FAILED, still unverified)', async () => {
     dnsRecords.set('_openchurch-verify.www.gracecommunity.org', [['openchurch-verify=' + 'f'.repeat(64)]])
     const res = await svc.verifyDomain({ churchId: churchA.id, domainId, ...actor, resolver: dnsStub })
     expect(res.ok).toBe(true)
-    if (res.ok) expect(res.domain.status).toBe('PENDING')
+    if (res.ok) expect(res.domain.status).toBe('VERIFICATION_FAILED')
+    // The row stays unverified — the resolver never serves it.
+    const t = await resolver.resolveChurchByHost('www.gracecommunity.org')
+    expect(t).toBeNull()
   })
 
   it('verifies when DNS carries the exact token (split character-strings too)', async () => {
-    // Regenerate to get a fresh plain token, then set DNS with the value
-    // split across two character-strings (common for long TXT values).
+    // Regenerate to get a fresh plain token (also resets the failed state),
+    // then set DNS with the value split across two character-strings
+    // (common for long TXT values).
     const regen = await svc.verifyDomain({ churchId: churchA.id, domainId, ...actor, resolver: dnsStub })
     expect(regen.ok).toBe(true)
     const fresh = await svc.regenerateToken({ churchId: churchA.id, domainId, ...actor })
@@ -192,7 +196,13 @@ describe('hosting + primary + resolution', () => {
 
   it('the resolver serves the owning church for the ACTIVE domain', async () => {
     const t = await resolver.resolveChurchByHost('www.gracecommunity.org')
-    expect(t).toEqual({ churchId: churchA.id, slug: churchA.slug })
+    expect(t).toMatchObject({
+      churchId: churchA.id,
+      slug: churchA.slug,
+      domain: 'www.gracecommunity.org',
+      isPrimaryDomain: false, // no primary flag set yet
+      primaryDomain: null,
+    })
   })
 
   it('unrelated hosts do not resolve', async () => {
@@ -243,6 +253,40 @@ describe('expired pending claims are reclaimable (never silently transferred)', 
     const rows = await db.churchDomain.findMany({ where: { domain: 'stale.example.org' } })
     expect(rows).toHaveLength(1)
     expect(rows[0].churchId).toBe(churchB.id)
+  })
+})
+
+describe('plan entitlements gate new claims', () => {
+  it('a church on the free plan cannot add domains (PLAN_LIMIT)', async () => {
+    const free = await db.church.create({
+      data: { slug: 'church-free', name: 'Free Church', country: 'NG', plan: 'free', settings: { create: {} } },
+      select: { id: true },
+    })
+    const res = await svc.addDomain({ churchId: free.id, rawDomain: 'freechurch.example.org', ...actor })
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.status).toBe(403)
+      expect(res.code).toBe('PLAN_LIMIT')
+      expect(res.error).toContain('plan')
+    }
+  })
+
+  it('the limit counts connected domains and blocks the excess add', async () => {
+    const paid = await db.church.create({
+      data: { slug: 'church-paid', name: 'Paid Church', country: 'NG', plan: 'paid', settings: { create: {} } },
+      select: { id: true },
+    })
+    const first = await svc.addDomain({ churchId: paid.id, rawDomain: 'paidchurch.example.org', ...actor })
+    expect(first.ok).toBe(true)
+    const second = await svc.addDomain({ churchId: paid.id, rawDomain: 'more.paidchurch.example.org', ...actor })
+    expect(second.ok).toBe(false)
+    if (!second.ok) expect(second.code).toBe('PLAN_LIMIT')
+  })
+
+  it('re-adding your own PENDING domain is idempotent even at the limit', async () => {
+    const paid = await db.church.findUnique({ where: { slug: 'church-paid' }, select: { id: true } })
+    const res = await svc.addDomain({ churchId: paid!.id, rawDomain: 'paidchurch.example.org', ...actor })
+    expect(res.ok).toBe(true) // token refresh, not a new claim
   })
 })
 
@@ -358,11 +402,11 @@ describe('capability gates: serverless hosting without provider integration', ()
     const setPrimary = await svc.setPrimaryDomain({ churchId: churchA.id, domainId: row.id, ...actor })
     expect(setPrimary.ok).toBe(false)
     if (!setPrimary.ok) expect(setPrimary.code).toBe('DOMAINS_UNAVAILABLE')
-    // connectDomain requires a VERIFIED row, so an ACTIVE row gets the
-    // precise NOT_VERIFIED response (the capability gate sits behind it).
+    // An ACTIVE row IS ownership-verified, so connect passes that gate and
+    // then hits the capability gate — the honest refusal.
     const connect = await svc.connectDomain({ churchId: churchA.id, domainId: row.id, ...actor })
     expect(connect.ok).toBe(false)
-    if (!connect.ok) expect(connect.code).toBe('NOT_VERIFIED')
+    if (!connect.ok) expect(connect.code).toBe('DOMAINS_UNAVAILABLE')
     await db.churchDomain.delete({ where: { id: row.id } })
   })
 

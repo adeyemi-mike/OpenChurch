@@ -18,8 +18,8 @@ describe('host resolution cache', () => {
   })
 
   it('caches positive resolutions and expires them', () => {
-    setCachedHostResolution('a.example', { churchId: 'c1', slug: 'one' })
-    expect(getCachedHostResolution('a.example')).toEqual({ churchId: 'c1', slug: 'one' })
+    setCachedHostResolution('a.example', { churchId: 'c1', slug: 'one', domain: null, isPrimaryDomain: false, primaryDomain: null })
+    expect(getCachedHostResolution('a.example')).toEqual({ churchId: 'c1', slug: 'one', domain: null, isPrimaryDomain: false, primaryDomain: null })
     invalidateHost('a.example')
     expect(getCachedHostResolution('a.example')).toBeUndefined()
   })
@@ -34,14 +34,14 @@ describe('host resolution cache', () => {
   })
 
   it('isolates tenants by exact hostname (no partial matching)', () => {
-    setCachedHostResolution('grace.example', { churchId: 'grace', slug: 'grace' })
+    setCachedHostResolution('grace.example', { churchId: 'grace', slug: 'grace', domain: 'grace.example', isPrimaryDomain: true, primaryDomain: 'grace.example' })
     expect(getCachedHostResolution('evil-grace.example')).toBeUndefined()
     expect(getCachedHostResolution('grace.example.evil.com')).toBeUndefined()
-    expect(getCachedHostResolution('GRACE.example')).toEqual({ churchId: 'grace', slug: 'grace' })
+    expect(getCachedHostResolution('GRACE.example')?.churchId).toBe('grace')
   })
 
   it('invalidateAllHosts clears every entry', () => {
-    setCachedHostResolution('x.example', { churchId: 'x', slug: 'x' })
+    setCachedHostResolution('x.example', { churchId: 'x', slug: 'x', domain: null, isPrimaryDomain: false, primaryDomain: null })
     setCachedHostResolution('y.example', null)
     invalidateAllHosts()
     expect(getCachedHostResolution('x.example')).toBeUndefined()

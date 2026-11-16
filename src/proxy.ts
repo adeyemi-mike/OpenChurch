@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { CSRF_COOKIE, newCsrfToken } from '@/lib/auth/csrf'
-import { resolveChurchByHost, isPlatformHost } from '@/lib/tenancy/resolver'
+import { resolveChurchByHost, isPlatformHost, canonicalRedirectFor } from '@/lib/tenancy/resolver'
 
 /**
  * Network boundary (Next.js 16 "proxy" — always Node.js runtime, which is
@@ -25,6 +25,9 @@ import { resolveChurchByHost, isPlatformHost } from '@/lib/tenancy/resolver'
  *        rewritten even on a church domain.
  *      - /sitemap.xml and /robots.txt on a church domain serve that
  *        church's sitemap/robots.
+ *      - Canonical-host enforcement: a request on the church's ACTIVE
+ *        NON-PRIMARY domain is 308-redirected to the same path on the
+ *        primary domain (how www ↔ apex relationships are handled).
  *      - Unknown hosts pass through to the platform site (no tenant
  *        existence leak).
  *
@@ -114,6 +117,17 @@ export async function proxy(req: NextRequest) {
     if (host && !isPlatformHost(host)) {
       const tenant = await resolveChurchByHost(host)
       if (tenant) {
+        // Canonical-host enforcement: church content on an ACTIVE
+        // non-primary domain redirects (308) to the primary domain — one
+        // canonical host per church, www ↔ apex included. Platform
+        // application paths are never redirected (they are not church
+        // content; the rewrite block below already excludes them).
+        if (!isPlatformPath(path)) {
+          const redirectTo = canonicalRedirectFor(tenant, path, req.nextUrl.search)
+          if (redirectTo) {
+            return NextResponse.redirect(redirectTo, 308)
+          }
+        }
         if (path === '/sitemap.xml') {
           return NextResponse.rewrite(new URL(`/church/${tenant.slug}/sitemap.xml`, req.url))
         }

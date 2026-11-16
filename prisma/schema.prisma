@@ -134,6 +134,11 @@ model Church {
   onboardingCompleted Boolean @default(false)
   onboardingStep Int     @default(1)
   status       String    @default("ACTIVE") // ACTIVE | SUSPENDED
+  // Subscription plan controlling feature entitlements (custom-domain
+  // limits etc.). No billing logic lives here — the operator (or a future
+  // billing integration) sets the plan; lib/domains/entitlements.ts enforces
+  // the configured limits. free | paid | premium.
+  plan         String    @default("free")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -172,10 +177,17 @@ model ChurchDomain {
   // hostname can never be assigned to two tenants.
   domain              String    @unique
   type                String    @default("CUSTOM") // SUBDOMAIN | CUSTOM
-  // Lifecycle: PENDING (added, awaiting TXT verification) -> VERIFIED (DNS TXT
-  // proves ownership) -> ACTIVE (hosting assignment confirmed by the provider
-  // adapter, or owner-confirmed in manual/self-hosted mode; the resolver only
-  // serves ACTIVE domains) -> REMOVED (row deleted; audit log retains history).
+  // Lifecycle (see lib/domains/status.ts for the full machine):
+  //   PENDING             — added, awaiting TXT ownership verification
+  //   VERIFICATION_FAILED — last ownership check failed (retryable)
+  //   VERIFIED            — DNS TXT proves ownership; awaiting provider assignment
+  //   PENDING_DNS         — attached to the hosting provider; DNS not confirmed yet
+  //   PENDING_SSL         — provider confirms DNS; SSL/HTTPS not confirmed yet
+  //   ACTIVE              — ownership + routing + HTTPS all confirmed; the ONLY
+  //                         status the tenant resolver serves
+  //   FAILED              — the provider lost/never completed assignment (retryable)
+  //   SUSPENDED           — suspended by the platform operator
+  //   (REMOVED — rows are deleted; the audit log retains the history.)
   status              String    @default("PENDING")
   isPrimary           Boolean   @default(false)
   // Kept in sync with status >= VERIFIED for backward compatibility with the
@@ -189,6 +201,12 @@ model ChurchDomain {
   // JSON summary of the last hosting-provider check (never trusted blindly).
   provider            String?
   providerStatus      String?
+  // The provider's own identifier for the domain (e.g. the Vercel domain
+  // uid) — captured from the provider API response, never fabricated.
+  providerRef         String?
+  // DNS status per the provider: PENDING | OK | ERROR (explicit column so
+  // the dashboard and cron rechecks can surface it without parsing JSON).
+  dnsStatus           String?
   sslStatus           String?
   failureReason       String?
   verifiedAt          DateTime?
@@ -199,6 +217,7 @@ model ChurchDomain {
 
   @@index([churchId])
   @@index([status])
+  @@index([provider, lastCheckedAt])
   @@map("church_domains")
 }
 

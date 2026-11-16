@@ -191,3 +191,108 @@ export function AdminPasswordReset() {
     </form>
   )
 }
+
+/** Plan selector for a church (custom-domain entitlement control). */
+export function AdminPlanSelect({
+  churchId,
+  plan,
+}: {
+  churchId: string
+  plan: string
+}) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+  const [value, setValue] = useState(plan)
+
+  async function change(next: string) {
+    if (next === value) return
+    setPending(true)
+    setValue(next)
+    try {
+      await apiFetch('/api/admin/churches', {
+        method: 'POST',
+        body: JSON.stringify({ churchId, action: 'set-plan', plan: next }),
+      })
+      toast.success(`Plan updated to “${next}”.`)
+      router.refresh()
+    } catch (err) {
+      setValue(value)
+      toast.error(err instanceof ApiClientError ? err.message : 'Could not update the plan.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      {pending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden />}
+      <select
+        aria-label="Church plan"
+        value={value}
+        disabled={pending}
+        onChange={(e) => void change(e.target.value)}
+        className="h-8 rounded-md border bg-background px-2 text-xs"
+      >
+        <option value="free">free</option>
+        <option value="paid">paid</option>
+        <option value="premium">premium</option>
+      </select>
+    </div>
+  )
+}
+
+/** Suspend / resume a custom domain (platform administrators only). */
+export function AdminDomainActions({
+  domainId,
+  domain,
+  status,
+}: {
+  domainId: string
+  domain: string
+  status: string
+}) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+  const suspended = status === 'SUSPENDED'
+
+  async function toggle() {
+    const action = suspended ? 'resume' : 'suspend'
+    const message = suspended
+      ? `Resume “${domain}”? It returns to its pre-suspension state.`
+      : `Suspend “${domain}”? It stops resolving immediately (the church keeps its platform address).`
+    if (!confirm(message)) return
+    setPending(true)
+    try {
+      await apiFetch('/api/admin/domains', {
+        method: 'POST',
+        body: JSON.stringify({ domainId, action }),
+      })
+      toast.success(suspended ? 'Domain resumed.' : 'Domain suspended.')
+      router.refresh()
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : 'Could not update the domain.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={toggle}
+      disabled={pending}
+      className={suspended ? '' : 'text-destructive hover:text-destructive'}
+      aria-label={suspended ? `Resume ${domain}` : `Suspend ${domain}`}
+    >
+      {pending ? (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+      ) : suspended ? (
+        <ShieldCheck className="size-3.5" aria-hidden />
+      ) : (
+        <ShieldOff className="size-3.5" aria-hidden />
+      )}
+      {suspended ? 'Resume' : 'Suspend'}
+    </Button>
+  )
+}

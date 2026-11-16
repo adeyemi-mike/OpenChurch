@@ -20,9 +20,19 @@ function makeFetch(handler: (url: string, init?: RequestInit) => { status: numbe
 const okCfg = { token: 't', projectId: 'p1' }
 
 describe('VercelDomainProvider.addDomain', () => {
-  it('returns ok on HTTP 200', async () => {
+  it('returns ok on HTTP 200 and captures the provider uid', async () => {
+    const p = new VercelDomainProvider({
+      ...okCfg,
+      fetchImpl: makeFetch(() => ({ status: 200, body: { name: 'd.example', uid: 'dom_uid_123' } })),
+    })
+    expect(await p.addDomain('d.example')).toEqual({ ok: true, providerRef: 'dom_uid_123' })
+  })
+
+  it('returns ok with a null providerRef when the API omits the uid', async () => {
     const p = new VercelDomainProvider({ ...okCfg, fetchImpl: makeFetch(() => ({ status: 200, body: { name: 'd' } })) })
-    expect(await p.addDomain('d.example')).toEqual({ ok: true })
+    const res = await p.addDomain('d.example')
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.providerRef).toBeNull()
   })
 
   it('surfaces a conflict (409) as an error naming the other project', async () => {
@@ -82,11 +92,61 @@ describe('VercelDomainProvider.inspectDomain', () => {
     expect(s.requiredRecords[0].name).toBe('@')
   })
 
-  it('reports unassigned for HTTP 404', async () => {
+  it('reports unassigned AND missing for HTTP 404', async () => {
     const p = new VercelDomainProvider({ ...okCfg, fetchImpl: makeFetch(() => ({ status: 404, body: {} })) })
     const s = await p.inspectDomain('d.example')
     expect(s.assigned).toBe(false)
+    expect(s.missing).toBe(true)
     expect(s.error).toContain('not attached')
+  })
+
+  it('parses config.suggestedValues (the real Vercel API field) into required records', async () => {
+    const p = new VercelDomainProvider({
+      ...okCfg,
+      fetchImpl: makeFetch(() => ({
+        status: 200,
+        body: {
+          verified: true,
+          uid: 'dom_uid_456',
+          config: {
+            misconfigured: false,
+            suggestedValues: [
+              { type: 'A', name: '@', value: '76.76.21.21' },
+              { type: 'CNAME', name: 'www', value: 'cname.vercel-dns.com' },
+            ],
+          },
+        },
+      })),
+    })
+    const s = await p.inspectDomain('gracecommunity.org')
+    expect(s.assigned).toBe(true)
+    expect(s.dnsConfigured).toBe(true)
+    expect(s.providerRef).toBe('dom_uid_456')
+    expect(s.missing).toBe(false)
+    expect(s.requiredRecords).toEqual([
+      { type: 'A', name: '@', value: '76.76.21.21', note: 'Set on the apex/root domain at your DNS provider.' },
+      { type: 'CNAME', name: 'www', value: 'cname.vercel-dns.com', note: 'Set at your DNS provider.' },
+    ])
+  })
+
+  it('prefers suggestedValues over legacy field names when both exist', async () => {
+    const p = new VercelDomainProvider({
+      ...okCfg,
+      fetchImpl: makeFetch(() => ({
+        status: 200,
+        body: {
+          verified: false,
+          verification: [{ type: 'TXT', domain: '_vercel', value: 'vc-domain-verify=abc' }],
+          config: { misconfigured: false, suggestedValues: [{ type: 'CNAME', name: 'www', value: 'cname.vercel-dns.com' }] },
+        },
+      })),
+    })
+    const s = await p.inspectDomain('www.gracecommunity.org')
+    expect(s.assigned).toBe(false)
+    expect(s.missing).toBe(false)
+    const types = s.requiredRecords.map((r) => r.type)
+    expect(types).toContain('CNAME')
+    expect(types).toContain('TXT') // Vercel's own verification record is surfaced
   })
 
   it('reports misconfiguration honestly (no green state)', async () => {

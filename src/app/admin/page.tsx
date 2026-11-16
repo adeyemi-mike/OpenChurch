@@ -23,7 +23,14 @@ import {
 } from '@/components/ui/table'
 import { db } from '@/lib/db'
 import { COUNTRIES } from '@/lib/format'
-import { AdminChurchActions, AdminPasswordReset } from '@/components/dashboard/admin-console'
+import {
+  AdminChurchActions,
+  AdminPasswordReset,
+  AdminDomainActions,
+  AdminPlanSelect,
+} from '@/components/dashboard/admin-console'
+import { getDomainCapability, domainsOperable } from '@/lib/domains/capability'
+import { isVercelConfigured } from '@/lib/domains/provider'
 
 export const metadata = { title: 'Platform Administration' }
 
@@ -43,6 +50,24 @@ export default async function AdminPage() {
     orderBy: { createdAt: 'desc' },
     include: { _count: { select: { memberships: true, pages: true } } },
   })
+
+  const domains = await db.churchDomain.findMany({
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      domain: true,
+      status: true,
+      dnsStatus: true,
+      sslStatus: true,
+      isPrimary: true,
+      provider: true,
+      failureReason: true,
+      lastCheckedAt: true,
+      church: { select: { name: true, slug: true, plan: true } },
+    },
+  })
+  const domainCapability = getDomainCapability()
+  const vercelConfigured = isVercelConfigured()
 
   const stats = [
     { label: 'Churches', value: churchesTotal, icon: Church },
@@ -109,6 +134,7 @@ export default async function AdminPage() {
                     <TableHead className="text-center">Pages</TableHead>
                     <TableHead>Website</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Plan</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -148,6 +174,9 @@ export default async function AdminPage() {
                             {church.status === 'SUSPENDED' ? 'Suspended' : 'Active'}
                           </Badge>
                         </TableCell>
+                        <TableCell>
+                          <AdminPlanSelect churchId={church.id} plan={church.plan} />
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {new Date(church.createdAt).toLocaleDateString()}
                         </TableCell>
@@ -161,6 +190,102 @@ export default async function AdminPage() {
                       </TableRow>
                     )
                   })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Custom domains & hosting integration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe2 className="size-4 text-muted-foreground" aria-hidden /> Custom domains &amp; hosting
+            <Badge variant="secondary">{domains.length}</Badge>
+          </CardTitle>
+          <CardDescription>
+            One-time operator configuration for the whole deployment — churches then manage their own
+            domains from Dashboard → Custom Domains.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              domainsOperable(domainCapability)
+                ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40'
+                : 'border-amber-200 bg-amber-50 dark:bg-amber-950/40'
+            }`}
+          >
+            <p className="font-medium">
+              {domainCapability.mode === 'managed-auto'
+                ? 'Automated domain assignment: configured'
+                : domainCapability.mode === 'self-hosted'
+                  ? 'Self-hosted deployment: manual domain workflow'
+                  : 'Managed custom domains: NOT available on this deployment'}
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              {domainCapability.summary}
+              {!vercelConfigured && (
+                <>
+                  {' '}
+                  To enable automated assignment on Vercel, set{' '}
+                  <code className="rounded bg-muted px-1">VERCEL_TOKEN</code> and{' '}
+                  <code className="rounded bg-muted px-1">VERCEL_PROJECT_ID</code> (optionally{' '}
+                  <code className="rounded bg-muted px-1">VERCEL_TEAM_ID</code>) in the deployment
+                  environment — see docs/DEPLOYMENT.md.
+                </>
+              )}
+            </p>
+          </div>
+          {domains.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No custom domains connected yet.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Domain</TableHead>
+                    <TableHead>Church</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>DNS</TableHead>
+                    <TableHead>SSL</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {domains.map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell>
+                        <p className="font-medium">{d.domain}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {d.isPrimary ? 'primary' : d.provider ?? '—'}
+                          {d.failureReason ? ` · ${d.failureReason.slice(0, 80)}` : ''}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-sm">{d.church.name}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            d.status === 'ACTIVE'
+                              ? 'default'
+                              : d.status === 'SUSPENDED' || d.status === 'FAILED'
+                                ? 'destructive'
+                                : 'secondary'
+                          }
+                        >
+                          {d.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{d.dnsStatus ?? '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{d.sslStatus ?? '—'}</TableCell>
+                      <TableCell className="text-right">
+                        <AdminDomainActions domainId={d.id} domain={d.domain} status={d.status} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

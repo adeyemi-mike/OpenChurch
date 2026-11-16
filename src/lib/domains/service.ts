@@ -4,26 +4,24 @@ import { validateCustomDomain, txtRecordName, type DomainValidation } from './va
 import {
   generateVerificationToken,
   hashVerificationToken,
-  checkOwnershipTxt,
   TOKEN_TTL_MS,
   type TxtResolver,
 } from './txt'
-import { getDomainProvider } from './provider'
+import { getDomainProvider, type DomainProvider, type ProviderDomainStatus } from './provider'
 import { domainsOperable, getDomainCapability } from './capability'
 import { invalidateAllHosts, invalidateHost } from './cache'
 import { recordAudit } from '@/lib/audit'
-import type { ChurchRole } from '@/lib/permissions'
+import { apexWwwCompanion, ownershipVerified, isDomainStatus } from './status'
+import { getDomainEntitlement } from './entitlements'
 
 /**
  * Custom-domain lifecycle service.
  *
- * Status machine (ChurchDomain.status):
- *   PENDING  — added; awaiting TXT ownership verification
- *   VERIFIED — DNS TXT proves the church owns the hostname
- *   ACTIVE   — hosting assignment confirmed (provider API in Vercel mode;
- *              owner-confirmed in manual/self-hosted mode). ONLY ACTIVE
- *              domains resolve to tenants.
- *   (REMOVED — rows are deleted; the audit log retains the history.)
+ * Full status machine (lib/domains/status.ts):
+ *   PENDING → VERIFICATION_FAILED (retryable) → VERIFIED → PENDING_DNS →
+ *   PENDING_SSL → ACTIVE, plus FAILED (provider lost/never completed
+ *   assignment) and SUSPENDED (operator kill-switch). Rows are DELETED on
+ *   removal; the audit log keeps the history.
  *
  * Concurrency: `domain` is globally UNIQUE. Claiming races collapse into a
  * constraint violation which the service translates into a precise outcome:
@@ -55,6 +53,8 @@ export type DomainView = {
   status: string
   isPrimary: boolean
   provider: string | null
+  providerRef: string | null
+  dnsStatus: string | null
   sslStatus: string | null
   failureReason: string | null
   verifiedAt: string | null
@@ -81,7 +81,9 @@ function toView(
     status: string
     isPrimary: boolean
     provider: string | null
+    providerRef: string | null
     providerStatus: string | null
+    dnsStatus: string | null
     sslStatus: string | null
     failureReason: string | null
     verifiedAt: Date | null
@@ -116,6 +118,8 @@ function toView(
     status: d.status,
     isPrimary: d.isPrimary,
     provider: d.provider,
+    providerRef: d.providerRef,
+    dnsStatus: d.dnsStatus,
     sslStatus: d.sslStatus,
     failureReason: d.failureReason,
     verifiedAt: d.verifiedAt?.toISOString() ?? null,
@@ -125,6 +129,39 @@ function toView(
     ...(plainToken ? { verificationToken: plainToken, txtRecord: { name: txtRecordName(d.domain), value: `openchurch-verify=${plainToken}` } } : {}),
   }
 }
+
+// ---------------------------------------------------------------------------
+// HTTPS probe — the only honest SSL check we can run ourselves
+// ---------------------------------------------------------------------------
+
+export type HttpsProbe = (domain: string) => Promise<{ ok: boolean; reason?: string }>
+
+/**
+ * Probe https://<domain>/ with a short timeout. ANY HTTP response proves the
+ * TLS handshake succeeded (the certificate is live); a network/certificate
+ * error means HTTPS is not serving yet. Never throws.
+ */
+export const probeHttps: HttpsProbe = async (domain) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5_000)
+  try {
+    await fetch(`https://${domain}/`, {
+      method: 'HEAD',
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: { 'user-agent': 'OpenChurch-DomainProbe/1.0' },
+    })
+    return { ok: true }
+  } catch {
+    return { ok: false, reason: 'HTTPS is not reachable on this domain yet.' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Listing / claims
+// ---------------------------------------------------------------------------
 
 export async function listDomains(churchId: string): Promise<DomainView[]> {
   const rows = await db.churchDomain.findMany({
@@ -139,7 +176,7 @@ export async function addDomain(input: {
   actorUserId: string
   actorEmail: string
   rawDomain: string
-}): Promise<DomainActionOutcome<{ domain: DomainView }>> {
+}): Promise<DomainActionOutcome<{ domain: DomainView; companionSuggestion?: string }>> {
   const { churchId, actorUserId, actorEmail } = input
   if (!domainsOperable()) return unavailableOutcome()
   const validation: DomainValidation = validateCustomDomain(input.rawDomain)
@@ -149,15 +186,28 @@ export async function addDomain(input: {
   const existing = await db.churchDomain.findUnique({ where: { domain } })
 
   if (existing && existing.churchId === churchId) {
-    if (existing.status === 'PENDING') {
+    if (existing.status === 'PENDING' || existing.status === 'VERIFICATION_FAILED') {
       // Idempotent re-add: refresh the token so instructions stay valid.
       return regenerateToken({ churchId, domainId: existing.id, actorUserId, actorEmail })
     }
     return { ok: false, status: 409, error: 'That domain is already connected to your church.', code: 'ALREADY_ADDED' }
   }
 
+  // Plan entitlement: a NEW claim requires headroom under the church's plan.
+  const entitlement = await getDomainEntitlement(churchId)
+  if (!entitlement.canAdd) {
+    return {
+      ok: false,
+      status: 403,
+      error:
+        entitlement.upgradeHint ??
+        `Your church\u2019s plan (${entitlement.plan}) allows ${entitlement.limit} custom domain${entitlement.limit === 1 ? '' : 's'}. Ask your platform operator about upgrading your plan.`,
+      code: 'PLAN_LIMIT',
+    }
+  }
+
   if (existing && existing.churchId !== churchId) {
-    if (existing.status === 'VERIFIED' || existing.status === 'ACTIVE') {
+    if (ownershipVerified(existing.status) || existing.status === 'ACTIVE') {
       // Never reveal WHICH church owns it.
       return { ok: false, status: 409, error: 'That domain is already in use by another church.', code: 'DOMAIN_TAKEN' }
     }
@@ -207,7 +257,18 @@ export async function addDomain(input: {
       metadata: { domain },
     })
     invalidateHost(domain)
-    return { ok: true, domain: toView(row, token) }
+    // www↔apex relationship: suggest the companion hostname when the church
+    // has not connected it yet (they are separate claims by design — each
+    // must pass its own ownership check).
+    const companion = apexWwwCompanion(domain)
+    let companionSuggestion: string | undefined
+    if (companion) {
+      const has = await db.churchDomain.findUnique({ where: { domain: companion }, select: { churchId: true } })
+      if (!has || has.churchId !== churchId) {
+        companionSuggestion = companion
+      }
+    }
+    return { ok: true, domain: toView(row, token), ...(companionSuggestion ? { companionSuggestion } : {}) }
   } catch (err) {
     // P2002 = unique violation: another request claimed it first.
     if ((err as { code?: string })?.code === 'P2002') {
@@ -227,13 +288,14 @@ export async function regenerateToken(input: {
   if (!domainsOperable()) return unavailableOutcome()
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
-  if (row.status !== 'PENDING') {
+  if (row.status !== 'PENDING' && row.status !== 'VERIFICATION_FAILED') {
     return { ok: false, status: 400, error: 'This domain is already verified.', code: 'ALREADY_VERIFIED' }
   }
   const token = generateVerificationToken()
   const updated = await db.churchDomain.update({
     where: { id: row.id },
     data: {
+      status: 'PENDING', // fresh token = fresh verification attempt
       verificationTokenHash: hashVerificationToken(token),
       tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
       failureReason: null,
@@ -253,7 +315,8 @@ export async function regenerateToken(input: {
 
 /**
  * Run the DNS TXT ownership check. Pure DNS truth — the flag flips only
- * when the record carries the token.
+ * when the record carries the token. A failed check marks the row
+ * VERIFICATION_FAILED (retryable; the row stays unverified).
  */
 export async function verifyDomain(input: {
   churchId: string
@@ -265,7 +328,7 @@ export async function verifyDomain(input: {
   if (!domainsOperable()) return unavailableOutcome()
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
-  if (row.status === 'VERIFIED' || row.status === 'ACTIVE') {
+  if (ownershipVerified(row.status)) {
     return { ok: true, domain: toView(row) }
   }
   if (!row.verificationTokenHash || !row.tokenExpiresAt) {
@@ -314,7 +377,11 @@ export async function verifyDomain(input: {
 
   const updated = await db.churchDomain.update({
     where: { id: row.id },
-    data: { lastCheckedAt: new Date(), failureReason: check.reason },
+    data: {
+      status: 'VERIFICATION_FAILED',
+      lastCheckedAt: new Date(),
+      failureReason: check.reason,
+    },
   })
   return { ok: true, domain: toView(updated) }
 }
@@ -348,20 +415,110 @@ async function checkOwnershipByHash(
   return { ok: false, reason: `The TXT record at ${name} does not carry the expected value yet — DNS can take a few minutes to propagate.` }
 }
 
+// ---------------------------------------------------------------------------
+// Provider assignment (connect) + rechecks
+// ---------------------------------------------------------------------------
+
+type ManagedProvider = DomainProvider & { configured: boolean }
+
+/** Resolve the managed provider, or an injectable test double. */
+function resolveProvider(injected?: ManagedProvider): ManagedProvider | null {
+  if (injected) return injected
+  return getDomainProvider()
+}
+
 /**
- * Attach the domain to the hosting provider (or record the manual
- * confirmation). Only the provider's own confirmation (or the explicit
- * manual owner confirmation) can set ACTIVE.
+ * Derive the post-inspect row state from the provider's view of the domain.
+ * Shared by connect and recheck so both paths apply IDENTICAL truth rules.
+ */
+async function deriveProviderState(
+  domain: string,
+  status: ProviderDomainStatus,
+  opts: { probe?: HttpsProbe; skipProbe?: boolean }
+): Promise<{
+  status: 'PENDING_DNS' | 'PENDING_SSL' | 'ACTIVE' | 'FAILED'
+  dnsStatus: 'PENDING' | 'OK' | 'ERROR'
+  sslStatus: 'PENDING' | 'PROVISIONING' | 'ACTIVE' | 'UNKNOWN'
+  failureReason: string | null
+}> {
+  // 1. The provider no longer has the domain → FAILED (never a fake ACTIVE).
+  if (status.missing) {
+    return {
+      status: 'FAILED',
+      dnsStatus: 'PENDING',
+      sslStatus: 'UNKNOWN',
+      failureReason: 'The hosting provider no longer has this domain attached — retry the connection.',
+    }
+  }
+  // 2. Attached but the provider has not verified it yet (its own TXT/DNS
+  //    check pending) → awaiting DNS.
+  if (!status.assigned) {
+    return {
+      status: 'PENDING_DNS',
+      dnsStatus: 'PENDING',
+      sslStatus: 'PENDING',
+      failureReason: status.error ?? 'The hosting provider is waiting for the DNS records shown below.',
+    }
+  }
+  // 3. Assigned but the provider reports the DNS configuration is wrong.
+  if (status.dnsConfigured === false) {
+    return {
+      status: 'PENDING_DNS',
+      dnsStatus: 'ERROR',
+      sslStatus: 'PENDING',
+      failureReason: status.error ?? 'The hosting provider reports the DNS configuration is not correct yet.',
+    }
+  }
+  // 4. Assigned + DNS configured per the provider → confirm HTTPS ourselves.
+  if (opts.skipProbe) {
+    return { status: 'PENDING_SSL', dnsStatus: 'OK', sslStatus: 'PROVISIONING', failureReason: null }
+  }
+  const probe = opts.probe ?? probeHttps
+  const probed = await probe(domain)
+  if (probed.ok) {
+    return { status: 'ACTIVE', dnsStatus: 'OK', sslStatus: 'ACTIVE', failureReason: null }
+  }
+  return {
+    status: 'PENDING_SSL',
+    dnsStatus: 'OK',
+    sslStatus: 'PROVISIONING',
+    failureReason:
+      (probed.reason ?? 'HTTPS is not live on this domain yet.') +
+      ' SSL certificates are issued automatically once DNS has fully propagated — this usually completes within minutes to a few hours.',
+  }
+}
+
+function serializeProviderStatus(status: ProviderDomainStatus): string {
+  return JSON.stringify({
+    assigned: status.assigned,
+    missing: status.missing,
+    dnsConfigured: status.dnsConfigured,
+    error: status.error,
+    requiredRecords: status.requiredRecords,
+    raw: status.raw,
+  })
+}
+
+/**
+ * Attach the domain to the hosting provider (managed mode) — or inspect it
+ * when it is already attached. Retries from FAILED are explicitly allowed.
+ * Only the provider's own confirmation (or, for the HTTPS leg, a successful
+ * probe) can set ACTIVE.
  */
 export async function connectDomain(input: {
   churchId: string
   domainId: string
   actorUserId: string
   actorEmail: string
+  provider?: ManagedProvider
+  probe?: HttpsProbe
 }): Promise<DomainActionOutcome<{ domain: DomainView }>> {
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
-  if (row.status !== 'VERIFIED') {
+  if (row.status === 'SUSPENDED') {
+    return { ok: false, status: 400, error: 'This domain is suspended by the platform operator.', code: 'SUSPENDED' }
+  }
+  if (!ownershipVerified(row.status)) {
     return { ok: false, status: 400, error: 'Verify domain ownership first.', code: 'NOT_VERIFIED' }
   }
 
@@ -379,7 +536,7 @@ export async function connectDomain(input: {
       code: 'NO_PROVIDER',
     }
   }
-  const provider = getDomainProvider()
+  const provider = resolveProvider(input.provider)
   if (!provider?.configured) {
     // Defensive: managed-auto implies a configured provider; this guards
     // against configuration changing between the checks above.
@@ -392,6 +549,13 @@ export async function connectDomain(input: {
     }
   }
 
+  // Already attached at the provider (PENDING_DNS / PENDING_SSL / ACTIVE):
+  // re-adding is unnecessary — run the shared recheck instead.
+  if (row.status === 'PENDING_DNS' || row.status === 'PENDING_SSL' || row.status === 'ACTIVE') {
+    return recheckDomain({ ...input, provider, probe: input.probe })
+  }
+
+  // VERIFIED (first connect) or FAILED (retry): (re-)attach, then inspect.
   const added = await provider.addDomain(row.domain)
   if (!added.ok) {
     await db.churchDomain.update({
@@ -402,21 +566,19 @@ export async function connectDomain(input: {
   }
 
   const status = await provider.inspectDomain(row.domain)
-  const ssl = status.assigned ? 'PROVISIONING' : 'PENDING'
+  const derived = await deriveProviderState(row.domain, status, { probe: input.probe })
 
   const updated = await db.churchDomain.update({
     where: { id: row.id },
     data: {
-      status: status.assigned ? 'ACTIVE' : 'VERIFIED',
-      providerStatus: JSON.stringify({
-        assigned: status.assigned,
-        dnsConfigured: status.dnsConfigured,
-        error: status.error,
-        requiredRecords: status.requiredRecords,
-        raw: status.raw,
-      }),
-      sslStatus: ssl,
-      failureReason: status.error,
+      status: derived.status,
+      isVerified: true,
+      dnsStatus: derived.dnsStatus,
+      sslStatus: derived.sslStatus,
+      failureReason: derived.failureReason,
+      provider: provider.kind,
+      providerRef: added.providerRef ?? status.providerRef ?? row.providerRef,
+      providerStatus: serializeProviderStatus(status),
       lastCheckedAt: new Date(),
     },
   })
@@ -427,9 +589,79 @@ export async function connectDomain(input: {
     action: 'domain.connected',
     entityType: 'church_domain',
     entityId: row.id,
-    metadata: { domain: row.domain, provider: provider.kind, assigned: status.assigned },
+    metadata: { domain: row.domain, provider: provider.kind, status: derived.status },
   })
   invalidateHost(row.domain)
+  if (derived.status !== 'ACTIVE') invalidateAllHosts()
+  return { ok: true, domain: toView(updated) }
+}
+
+/**
+ * Re-check a provider-assigned domain: provider inspection + HTTPS probe.
+ * Used by the dashboard ("Check status"), the stale-recheck on list, and
+ * the background cron. Safe to run repeatedly; can DOWNGRADE an ACTIVE row
+ * to FAILED when the provider no longer has the domain (a provider failure
+ * never leaves a misleading active record).
+ */
+export async function recheckDomain(input: {
+  churchId: string
+  domainId: string
+  actorUserId?: string
+  actorEmail?: string
+  provider?: ManagedProvider
+  probe?: HttpsProbe
+  skipProbe?: boolean
+}): Promise<DomainActionOutcome<{ domain: DomainView }>> {
+  const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
+  if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
+  if (row.status === 'SUSPENDED') {
+    return { ok: false, status: 400, error: 'This domain is suspended by the platform operator.', code: 'SUSPENDED' }
+  }
+  if (!['PENDING_DNS', 'PENDING_SSL', 'ACTIVE', 'FAILED'].includes(row.status)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Connect the domain to hosting first — this status has nothing to re-check at the provider.',
+      code: 'NOT_CONNECTED',
+    }
+  }
+  const provider = resolveProvider(input.provider)
+  if (!provider?.configured || provider.kind !== 'vercel') {
+    return {
+      ok: false,
+      status: 503,
+      error: 'This deployment has no automated hosting-provider integration to re-check against.',
+      code: 'NO_PROVIDER',
+    }
+  }
+
+  const status = await provider.inspectDomain(row.domain)
+  const derived = await deriveProviderState(row.domain, status, { probe: input.probe, skipProbe: input.skipProbe })
+
+  const updated = await db.churchDomain.update({
+    where: { id: row.id },
+    data: {
+      status: derived.status,
+      dnsStatus: derived.dnsStatus,
+      sslStatus: derived.sslStatus,
+      failureReason: derived.failureReason,
+      provider: provider.kind,
+      providerRef: status.providerRef ?? row.providerRef,
+      providerStatus: serializeProviderStatus(status),
+      lastCheckedAt: new Date(),
+    },
+  })
+  // A status that stops serving traffic must leave the host cache NOW.
+  if (row.status !== derived.status) invalidateHost(row.domain)
+  await recordAudit({
+    churchId: input.churchId,
+    actorUserId: input.actorUserId ?? null,
+    actorEmail: input.actorEmail ?? 'system:recheck',
+    action: 'domain.rechecked',
+    entityType: 'church_domain',
+    entityId: row.id,
+    metadata: { domain: row.domain, from: row.status, to: derived.status },
+  })
   return { ok: true, domain: toView(updated) }
 }
 
@@ -446,7 +678,11 @@ export async function confirmManualConnection(input: {
 }): Promise<DomainActionOutcome<{ domain: DomainView }>> {
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
-  if (row.status !== 'VERIFIED') {
+  if (row.status === 'SUSPENDED') {
+    return { ok: false, status: 400, error: 'This domain is suspended by the platform operator.', code: 'SUSPENDED' }
+  }
+  if (row.status === 'ACTIVE') return { ok: true, domain: toView(row) }
+  if (!ownershipVerified(row.status) && row.status !== 'FAILED') {
     return { ok: false, status: 400, error: 'Verify domain ownership first.', code: 'NOT_VERIFIED' }
   }
   // Manual confirmation is ONLY legitimate on a self-hosted deployment: the
@@ -487,6 +723,10 @@ export async function confirmManualConnection(input: {
   invalidateHost(row.domain)
   return { ok: true, domain: toView(updated) }
 }
+
+// ---------------------------------------------------------------------------
+// Primary domain, removal, operator suspension
+// ---------------------------------------------------------------------------
 
 /**
  * Set the primary (canonical) domain. Requires ACTIVE. Clears the flag on
@@ -532,11 +772,12 @@ export async function removeDomain(input: {
   domainId: string
   actorUserId: string
   actorEmail: string
+  provider?: ManagedProvider
 }): Promise<DomainActionOutcome<{ removed: true }>> {
   const row = await db.churchDomain.findFirst({ where: { id: input.domainId, churchId: input.churchId } })
   if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
 
-  const provider = getDomainProvider()
+  const provider = resolveProvider(input.provider)
   let providerError: string | null = null
   if (provider && row.status !== 'PENDING' && row.provider === provider.kind) {
     const res = await provider.removeDomain(row.domain)
@@ -557,6 +798,89 @@ export async function removeDomain(input: {
   invalidateAllHosts()
   return { ok: true, removed: true }
 }
+
+/**
+ * Operator suspension (platform admin only — the API route enforces it).
+ * Suspended domains stop resolving immediately. The pre-suspension status
+ * is stashed inside providerStatus so a resume restores exactly it.
+ */
+export async function setDomainSuspension(input: {
+  domainId: string
+  suspended: boolean
+  actorUserId: string
+  actorEmail: string
+}): Promise<DomainActionOutcome<{ domain: DomainView }>> {
+  const row = await db.churchDomain.findUnique({ where: { id: input.domainId } })
+  if (!row) return { ok: false, status: 404, error: 'Domain not found.', code: 'NOT_FOUND' }
+
+  if (input.suspended) {
+    if (row.status === 'SUSPENDED') return { ok: true, domain: toView(row) }
+    let stashed: Record<string, unknown> = { mode: 'suspended', suspendedFrom: row.status }
+    if (row.providerStatus) {
+      try {
+        stashed = { ...(JSON.parse(row.providerStatus) as Record<string, unknown>), suspendedFrom: row.status }
+      } catch {
+        /* keep the simple stash */
+      }
+    }
+    const updated = await db.churchDomain.update({
+      where: { id: row.id },
+      data: { status: 'SUSPENDED', providerStatus: JSON.stringify(stashed) },
+    })
+    await recordAudit({
+      churchId: row.churchId,
+      actorUserId: input.actorUserId,
+      actorEmail: input.actorEmail,
+      action: 'domain.suspended',
+      entityType: 'church_domain',
+      entityId: row.id,
+      metadata: { domain: row.domain, from: row.status },
+    })
+    invalidateHost(row.domain)
+    invalidateAllHosts()
+    return { ok: true, domain: toView(updated) }
+  }
+
+  // Resume: restore the stashed status EXACTLY — never a state the domain
+  // did not already have (a suspended-unverified row must not resume as
+  // verified). Anything unrecognized falls back to the safe floor PENDING.
+  if (row.status !== 'SUSPENDED') return { ok: true, domain: toView(row) }
+  let restore = 'PENDING'
+  let providerStatus: string | null = null
+  if (row.providerStatus) {
+    try {
+      const parsed = JSON.parse(row.providerStatus) as { suspendedFrom?: string; [k: string]: unknown }
+      const from = parsed.suspendedFrom
+      if (from && isDomainStatus(from) && from !== 'SUSPENDED') {
+        restore = from
+      }
+      delete parsed.suspendedFrom
+      providerStatus = JSON.stringify(parsed)
+    } catch {
+      /* defaults */
+    }
+  }
+  const updated = await db.churchDomain.update({
+    where: { id: row.id },
+    data: { status: restore, providerStatus },
+  })
+  await recordAudit({
+    churchId: row.churchId,
+    actorUserId: input.actorUserId,
+    actorEmail: input.actorEmail,
+    action: 'domain.resumed',
+    entityType: 'church_domain',
+    entityId: row.id,
+    metadata: { domain: row.domain, to: restore },
+  })
+  invalidateHost(row.domain)
+  invalidateAllHosts()
+  return { ok: true, domain: toView(updated) }
+}
+
+// ---------------------------------------------------------------------------
+// Canonical origin helpers (unchanged behaviour)
+// ---------------------------------------------------------------------------
 
 /**
  * The church's ACTIVE primary domain (canonical host), if any.

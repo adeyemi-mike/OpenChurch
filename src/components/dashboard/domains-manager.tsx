@@ -41,7 +41,11 @@ import { can, type ChurchRole } from '@/lib/permissions'
  *   3. Connect hosting     → automated (Vercel) with the provider's own DNS
  *                            records + confirmation, or manual confirmation
  *                            on self-hosted deployments
- *   4. Set primary         → canonical URLs, sitemap and metadata follow it
+ *   4. Check status        → provider inspection + HTTPS probe; progresses
+ *                            Pending DNS → Pending SSL → Active, and can
+ *                            downgrade a domain the provider lost
+ *   5. Set primary         → canonical URLs, sitemap and metadata follow it;
+ *                            non-primary domains redirect to the primary
  *
  * Status colours only turn green when the underlying checks actually
  * succeeded — no optimistic or fabricated success states.
@@ -53,6 +57,8 @@ type DomainView = {
   status: string
   isPrimary: boolean
   provider: string | null
+  providerRef: string | null
+  dnsStatus: string | null
   sslStatus: string | null
   failureReason: string | null
   verifiedAt: string | null
@@ -80,31 +86,54 @@ type Capability = {
   summary: string
 }
 
+/** The church's plan entitlement, per src/lib/domains/entitlements.ts. */
+type Entitlement = {
+  plan: 'free' | 'paid' | 'premium'
+  limit: number
+  used: number
+  canAdd: boolean
+  upgradeHint: string | null
+}
+
+/** Statuses a provider recheck ("Check status") applies to. */
+const RECHECKABLE = ['PENDING_DNS', 'PENDING_SSL', 'ACTIVE', 'FAILED']
+
+const TONE_CLASSES: Record<string, string> = {
+  green: 'gap-1 bg-emerald-600 hover:bg-emerald-600',
+  blue: 'gap-1 bg-sky-600 hover:bg-sky-600',
+  amber: 'gap-1 text-amber-700 border-amber-300 bg-amber-50',
+  red: 'gap-1 text-red-700 border-red-300 bg-red-50',
+  gray: 'gap-1 text-muted-foreground',
+}
+
 function statusBadge(d: DomainView) {
-  if (d.status === 'ACTIVE' && d.isPrimary) {
-    return (
-      <Badge className="gap-1 bg-emerald-600 hover:bg-emerald-600">
-        <Star className="size-3" aria-hidden /> Active · Primary
-      </Badge>
-    )
+  const toneFor = (status: string): { label: string; tone: string; icon: 'star' | 'check' | 'shield' | 'alert' | 'x' } => {
+    if (status === 'ACTIVE')
+      return d.isPrimary
+        ? { label: 'Active · Primary', tone: 'green', icon: 'star' }
+        : { label: 'Active', tone: 'green', icon: 'check' }
+    if (status === 'PENDING') return { label: 'Pending verification', tone: 'amber', icon: 'shield' }
+    if (status === 'VERIFICATION_FAILED') return { label: 'Verification failed — retry', tone: 'red', icon: 'alert' }
+    if (status === 'VERIFIED') return { label: 'Verified — connect hosting', tone: 'blue', icon: 'shield' }
+    if (status === 'PENDING_DNS') return { label: 'Pending DNS', tone: 'amber', icon: 'shield' }
+    if (status === 'PENDING_SSL') return { label: 'DNS ok — SSL provisioning', tone: 'amber', icon: 'shield' }
+    if (status === 'FAILED') return { label: 'Failed — retry connection', tone: 'red', icon: 'alert' }
+    if (status === 'SUSPENDED') return { label: 'Suspended by operator', tone: 'gray', icon: 'x' }
+    return { label: status, tone: 'gray', icon: 'x' }
   }
-  if (d.status === 'ACTIVE') {
+  const { label, tone, icon } = toneFor(d.status)
+  const Icon =
+    icon === 'star' ? Star : icon === 'check' ? BadgeCheck : icon === 'shield' ? ShieldCheck : icon === 'alert' ? ShieldAlert : ShieldAlert
+  if (tone === 'amber' || tone === 'red' || tone === 'gray') {
     return (
-      <Badge className="gap-1 bg-emerald-600 hover:bg-emerald-600">
-        <BadgeCheck className="size-3" aria-hidden /> Active
-      </Badge>
-    )
-  }
-  if (d.status === 'VERIFIED') {
-    return (
-      <Badge className="gap-1 bg-sky-600 hover:bg-sky-600">
-        <ShieldCheck className="size-3" aria-hidden /> Verified — connect hosting
+      <Badge variant="outline" className={TONE_CLASSES[tone]}>
+        <Icon className="size-3" aria-hidden /> {label}
       </Badge>
     )
   }
   return (
-    <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 bg-amber-50">
-      <ShieldAlert className="size-3" aria-hidden /> Pending verification
+    <Badge className={TONE_CLASSES[tone]}>
+      <Icon className="size-3" aria-hidden /> {label}
     </Badge>
   )
 }
@@ -138,16 +167,19 @@ export function DomainsManager({
   slug,
   role,
   platformUrl,
+  subdomainUrl,
   churchName,
 }: {
   slug: string
   role: ChurchRole
   platformUrl: string
+  subdomainUrl: string | null
   churchName: string
 }) {
   const [domains, setDomains] = useState<DomainView[]>([])
   const [provider, setProvider] = useState<ProviderInfo | null>(null)
   const [capability, setCapability] = useState<Capability | null>(null)
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [newDomain, setNewDomain] = useState('')
@@ -157,12 +189,16 @@ export function DomainsManager({
 
   const load = useCallback(async () => {
     try {
-      const res = await apiFetch<{ domains: DomainView[]; provider: ProviderInfo; capability: Capability }>(
-        `/api/dashboard/${slug}/domains`
-      )
+      const res = await apiFetch<{
+        domains: DomainView[]
+        provider: ProviderInfo
+        capability: Capability
+        entitlement: Entitlement
+      }>(`/api/dashboard/${slug}/domains`)
       setDomains(res.domains)
       setProvider(res.provider)
       setCapability(res.capability)
+      setEntitlement(res.entitlement)
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : 'Could not load domains.')
     } finally {
@@ -177,19 +213,26 @@ export function DomainsManager({
   async function addDomain() {
     setAdding(true)
     try {
-      const res = await apiFetch<{ domain: DomainView }>(`/api/dashboard/${slug}/domains`, {
-        method: 'POST',
-        body: JSON.stringify({ domain: newDomain }),
-      })
+      const res = await apiFetch<{ domain: DomainView; companionSuggestion?: string }>(
+        `/api/dashboard/${slug}/domains`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ domain: newDomain }),
+        }
+      )
       const d = res.domain
       toast.success(`${d.domain} added — add the TXT record below, then verify.`)
+      if (res.companionSuggestion) {
+        toast.info(`Also own ${res.companionSuggestion}? Add it separately so both addresses work — each domain is verified independently.`)
+      }
       setNewDomain('')
       await load()
-      // Re-fetch so the freshly generated token comes back into view? The
-      // list endpoint never returns tokens (security) — the add response
-      // does. Merge it in:
+      // The list endpoint never returns tokens (security) — the add response
+      // does. Merge it in so the instructions are visible immediately:
       if (d.verificationToken) {
-        setDomains((prev) => prev.map((x) => (x.id === d.id ? { ...x, verificationToken: d.verificationToken, txtRecord: d.txtRecord } : x)))
+        setDomains((prev) =>
+          prev.map((x) => (x.id === d.id ? { ...x, verificationToken: d.verificationToken, txtRecord: d.txtRecord } : x))
+        )
       }
     } catch (err) {
       toast.error(err instanceof ApiClientError ? err.message : 'Could not add the domain.')
@@ -207,12 +250,19 @@ export function DomainsManager({
       })
       const d = res.domain
       if (action === 'verify') {
-        if (d.status === 'VERIFIED' || d.status === 'ACTIVE') toast.success('Ownership verified — now connect hosting.')
+        if (d.status === 'VERIFIED' || d.status === 'PENDING_DNS' || d.status === 'PENDING_SSL' || d.status === 'ACTIVE')
+          toast.success('Ownership verified — now connect hosting.')
         else toast.info(d.failureReason ?? 'Verification is not complete yet.')
       }
       if (action === 'connect') {
         if (d.status === 'ACTIVE') toast.success('Hosting confirmed — the domain is live.')
+        else if (d.status === 'PENDING_SSL') toast.info('DNS is configured — SSL certificate provisioning is in progress.')
         else toast.info(d.failureReason ?? 'Hosting assignment is pending — set the DNS records shown below.')
+      }
+      if (action === 'recheck') {
+        if (d.status === 'ACTIVE') toast.success('All checks pass — the domain is live.')
+        else if (d.status === 'FAILED') toast.error(d.failureReason ?? 'The hosting provider no longer has this domain attached.')
+        else toast.info(d.failureReason ?? 'Still in progress — DNS and SSL can take a little while.')
       }
       if (action === 'confirm-manual') toast.success('Marked active (owner-confirmed, self-hosted).')
       if (action === 'set-primary') toast.success('Primary domain updated — canonical URLs now use it.')
@@ -256,6 +306,11 @@ export function DomainsManager({
           <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
             Serve {churchName}&apos;s website on your own domain (e.g. www.yourchurch.org). Your platform
             address keeps working: <a className="underline underline-offset-2" href={platformUrl} target="_blank" rel="noopener noreferrer">{platformUrl.replace(/^https?:\/\//, '')}</a>
+            {subdomainUrl && (
+              <>
+                {' '}· subdomain address: <a className="underline underline-offset-2" href={subdomainUrl} target="_blank" rel="noopener noreferrer">{subdomainUrl.replace(/^https?:\/\//, '')}</a>
+              </>
+            )}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
@@ -312,6 +367,28 @@ export function DomainsManager({
             <code className="mx-1 rounded bg-amber-100 dark:bg-amber-900 px-1">CUSTOM_DOMAIN_MODE</code>.)
           </div>
         )
+      )}
+
+      {capability?.mode !== 'unavailable' && entitlement && (
+        <div className="rounded-xl border bg-muted/30 px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">Plan: {entitlement.plan}</span>
+            <Badge variant="outline">
+              {entitlement.used} of {entitlement.limit === 0 ? '0' : entitlement.limit} domain
+              {entitlement.limit === 1 ? '' : 's'} connected
+            </Badge>
+            {!entitlement.canAdd && entitlement.limit === 0 && (
+              <span className="text-muted-foreground">
+                Custom domains are included with paid plans — ask your platform operator about upgrading.
+              </span>
+            )}
+            {!entitlement.canAdd && entitlement.limit > 0 && (
+              <span className="text-muted-foreground">
+                Your plan&apos;s domain limit is reached. Remove a domain or ask your platform operator about upgrading.
+              </span>
+            )}
+          </div>
+        </div>
       )}
 
       {capability?.mode !== 'unavailable' && canManage && (
@@ -391,7 +468,7 @@ export function DomainsManager({
                 ) : (
                   <>
                 {/* Step 1 — TXT ownership verification */}
-                {(d.status === 'PENDING' || d.verificationToken) && d.txtRecord && (
+                {(d.status === 'PENDING' || d.status === 'VERIFICATION_FAILED' || (d.verificationToken && d.txtRecord)) && d.txtRecord && (
                   <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
                     <p className="text-sm font-medium">Step 1 — Verify ownership: add this TXT record at your DNS provider</p>
                     <div className="grid gap-2 text-sm">
@@ -417,7 +494,7 @@ export function DomainsManager({
                     <div className="flex flex-wrap items-center gap-2">
                       <Button size="sm" onClick={() => void act(d.id, 'verify')} disabled={busyId === d.id} className="gap-1.5">
                         {busyId === d.id ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <ShieldCheck className="size-3.5" aria-hidden />}
-                        Verify ownership
+                        {d.status === 'VERIFICATION_FAILED' ? 'Retry verification' : 'Verify ownership'}
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => void act(d.id, 'regenerate-token')} disabled={busyId === d.id} className="gap-1.5">
                         <RefreshCw className="size-3.5" aria-hidden /> New token
@@ -426,17 +503,17 @@ export function DomainsManager({
                         {d.tokenExpiresAt ? `Token expires ${new Date(d.tokenExpiresAt).toLocaleString()}` : null}
                       </span>
                     </div>
-                    {d.failureReason && d.status === 'PENDING' && (
+                    {d.failureReason && (d.status === 'PENDING' || d.status === 'VERIFICATION_FAILED') && (
                       <p className="text-xs text-amber-700 dark:text-amber-400">{d.failureReason}</p>
                     )}
                   </div>
                 )}
 
                 {/* Step 2 — hosting */}
-                {d.status === 'VERIFIED' && (
+                {(d.status === 'VERIFIED' || d.status === 'FAILED') && (
                   <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
                     <p className="text-sm font-medium">
-                      Step 2 — Connect hosting
+                      {d.status === 'FAILED' ? 'Hosting failed — retry the connection' : 'Step 2 — Connect hosting'}
                       {provider?.vercelConfigured
                         ? ' (automated via Vercel)'
                         : ' (self-hosted: point DNS at your server, then confirm)'}
@@ -445,7 +522,7 @@ export function DomainsManager({
                       <div className="flex flex-wrap items-center gap-2">
                         <Button size="sm" onClick={() => void act(d.id, 'connect')} disabled={busyId === d.id} className="gap-1.5">
                           {busyId === d.id ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Globe className="size-3.5" aria-hidden />}
-                          Connect to hosting
+                          {d.status === 'FAILED' ? 'Retry connection' : 'Connect to hosting'}
                         </Button>
                         <span className="text-xs text-muted-foreground">Adds the domain to the Vercel project and shows the required DNS records.</span>
                       </div>
@@ -465,7 +542,7 @@ export function DomainsManager({
                 )}
 
                 {/* Provider DNS records (after connect) */}
-                {d.status !== 'PENDING' && d.providerInfo && d.providerInfo.requiredRecords.length > 0 && (
+                {d.providerInfo && d.providerInfo.requiredRecords.length > 0 && d.status !== 'VERIFIED' && (
                   <div className="rounded-lg border p-4 space-y-2">
                     <p className="text-sm font-medium">DNS records required by the hosting provider</p>
                     <div className="space-y-2">
@@ -485,38 +562,54 @@ export function DomainsManager({
                   </div>
                 )}
 
-                {/* Active domain actions */}
-                {d.status === 'ACTIVE' && (
+                {/* In-progress / active domain actions */}
+                {(RECHECKABLE.includes(d.status) || d.status === 'ACTIVE') && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <a
-                      href={`https://${d.domain}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-                    >
-                      Open https://{d.domain} <ExternalLink className="size-3.5" aria-hidden />
-                    </a>
-                    {!d.isPrimary && (
+                    {d.status === 'ACTIVE' && (
+                      <a
+                        href={`https://${d.domain}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                      >
+                        Open https://{d.domain} <ExternalLink className="size-3.5" aria-hidden />
+                      </a>
+                    )}
+                    {d.status === 'ACTIVE' && !d.isPrimary && (
                       <Button size="sm" variant="outline" onClick={() => void act(d.id, 'set-primary')} disabled={busyId === d.id} className="gap-1.5">
                         <Star className="size-3.5" aria-hidden /> Set as primary
                       </Button>
                     )}
-                    {provider?.vercelConfigured && (
+                    {provider?.vercelConfigured && RECHECKABLE.includes(d.status) && (
+                      <Button size="sm" variant="outline" onClick={() => void act(d.id, 'recheck')} disabled={busyId === d.id} className="gap-1.5">
+                        {busyId === d.id ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <RefreshCw className="size-3.5" aria-hidden />}
+                        {d.status === 'ACTIVE' ? 'Re-check status' : 'Check status'}
+                      </Button>
+                    )}
+                    {d.status === 'FAILED' && provider?.vercelConfigured && (
                       <Button size="sm" variant="outline" onClick={() => void act(d.id, 'connect')} disabled={busyId === d.id} className="gap-1.5">
-                        <RefreshCw className="size-3.5" aria-hidden /> Re-check hosting status
+                        <RefreshCw className="size-3.5" aria-hidden /> Retry connection
                       </Button>
                     )}
                   </div>
                 )}
 
-                {d.status === 'ACTIVE' && d.sslStatus && (
+                {(d.status === 'PENDING_DNS' || d.status === 'PENDING_SSL' || d.status === 'ACTIVE' || d.status === 'FAILED') && d.failureReason && (
+                  <p className="text-xs text-muted-foreground">{d.failureReason}</p>
+                )}
+
+                {d.sslStatus && (d.status === 'PENDING_SSL' || d.status === 'ACTIVE') && (
                   <p className="text-xs text-muted-foreground">
                     SSL/HTTPS:{' '}
-                    {d.sslStatus === 'PROVISIONING'
-                      ? 'provisioned automatically by the hosting provider once DNS is live.'
-                      : d.sslStatus === 'MANAGED_BY_HOST'
-                        ? 'managed by your hosting proxy (self-hosted deployment).'
-                        : d.sslStatus.toLowerCase()}
+                    {d.sslStatus === 'ACTIVE'
+                      ? 'confirmed live (HTTPS probe succeeded).'
+                      : d.sslStatus === 'PROVISIONING'
+                        ? 'provisioned automatically by the hosting provider once DNS is live.'
+                        : d.sslStatus === 'PENDING'
+                          ? 'starts once the DNS records above are set.'
+                          : d.sslStatus === 'MANAGED_BY_HOST'
+                            ? 'managed by your hosting proxy (self-hosted deployment).'
+                            : d.sslStatus.toLowerCase()}
                   </p>
                 )}
                   </>

@@ -20,10 +20,24 @@ import { getCachedHostResolution, setCachedHostResolution } from '@/lib/domains/
  * only ever serves domains with status ACTIVE — added-but-unverified or
  * removed hostnames never select a tenant.
  *
+ * Canonical-host enforcement: when the resolved host is one of the church's
+ * ACTIVE NON-PRIMARY domains and a primary domain exists, the proxy issues a
+ * permanent redirect to the same path on the primary (this is how www ↔ apex
+ * relationships are handled — e.g. gracecommunity.org → www.gracecommunity.org).
+ *
  * Resolution results are cached briefly (60s TTL) — see lib/domains/cache.
  */
 
-export type ResolvedTenant = { churchId: string; slug: string } | null
+export type ResolvedTenant = {
+  churchId: string
+  slug: string
+  /** Matched custom-domain hostname (null when resolved via platform subdomain). */
+  domain: string | null
+  /** True when the matched host is the church's primary (canonical) domain. */
+  isPrimaryDomain: boolean
+  /** The church's primary ACTIVE domain, when one exists. */
+  primaryDomain: string | null
+} | null
 
 const RESERVED_SUBDOMAINS = new Set([
   'www',
@@ -47,10 +61,13 @@ export async function resolveChurchByHost(host: string): Promise<ResolvedTenant>
 
   const custom = await db.churchDomain.findFirst({
     where: { domain: hostname, status: 'ACTIVE' },
-    select: { church: { select: { id: true, slug: true, status: true } } },
+    select: {
+      churchId: true,
+      church: { select: { id: true, slug: true, status: true } },
+    },
   })
   if (custom && custom.church.status === 'ACTIVE') {
-    const resolved = { churchId: custom.church.id, slug: custom.church.slug }
+    const resolved = await resolveWithPrimary(hostname, custom.church.id, custom.church.slug)
     setCachedHostResolution(hostname, resolved)
     return resolved
   }
@@ -65,7 +82,13 @@ export async function resolveChurchByHost(host: string): Promise<ResolvedTenant>
         select: { id: true, slug: true },
       })
       if (church) {
-        const resolved = { churchId: church.id, slug: church.slug }
+        const resolved: NonNullable<ResolvedTenant> = {
+          churchId: church.id,
+          slug: church.slug,
+          domain: null,
+          isPrimaryDomain: false,
+          primaryDomain: null,
+        }
         setCachedHostResolution(hostname, resolved)
         return resolved
       }
@@ -75,6 +98,49 @@ export async function resolveChurchByHost(host: string): Promise<ResolvedTenant>
   // Negative caching keeps unknown hosts from hammering the database.
   setCachedHostResolution(hostname, null)
   return null
+}
+
+/** Enrich a custom-domain match with the church's primary domain. */
+async function resolveWithPrimary(
+  hostname: string,
+  churchId: string,
+  slug: string
+): Promise<NonNullable<ResolvedTenant>> {
+  const primary = await db.churchDomain.findFirst({
+    where: { churchId, status: 'ACTIVE', isPrimary: true },
+    select: { domain: true },
+  })
+  return {
+    churchId,
+    slug,
+    domain: hostname,
+    isPrimaryDomain: primary?.domain === hostname,
+    primaryDomain: primary?.domain ?? null,
+  }
+}
+
+/**
+ * Canonical-host redirect decision (pure — unit-tested).
+ *
+ * Returns the absolute URL the proxy should 308-redirect to, or null when
+ * the request should be served as-is. Only fires for a church's own ACTIVE
+ * NON-PRIMARY custom domain when a primary exists — platform subdomain
+ * traffic, platform paths and the primary host itself are never redirected.
+ */
+export function canonicalRedirectFor(
+  resolved: NonNullable<ResolvedTenant>,
+  path: string,
+  search: string
+): string | null {
+  if (!resolved.domain) return null // platform subdomain (or primary-less)
+  if (resolved.isPrimaryDomain) return null
+  if (!resolved.primaryDomain) return null
+  if (resolved.primaryDomain === resolved.domain) return null
+  // Defensive: a path with an embedded query must not double the search.
+  const pathOnly = path.split('?')[0]
+  const cleanPath = pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`
+  const qs = search || (path.includes('?') ? `?${path.split('?').slice(1).join('?')}` : '')
+  return `https://${resolved.primaryDomain}${cleanPath === '/' ? '/' : cleanPath}${qs}`
 }
 
 /**
@@ -103,6 +169,22 @@ export function isPlatformHost(hostname: string): boolean {
 
 export function isReservedSubdomain(slug: string): boolean {
   return RESERVED_SUBDOMAINS.has(slug)
+}
+
+/**
+ * The addresses a church automatically receives on this deployment:
+ * the PATH URL (always) and, when the operator configured a platform root
+ * domain with wildcard DNS, the subdomain URL.
+ */
+export function churchPlatformAddresses(slug: string): {
+  pathUrl: string
+  subdomainUrl: string | null
+} {
+  const rootDomain = process.env.PLATFORM_ROOT_DOMAIN?.trim().toLowerCase()
+  return {
+    pathUrl: churchBaseUrl(slug),
+    subdomainUrl: rootDomain ? `https://${slug}.${rootDomain}` : null,
+  }
 }
 
 /** Public URL for a church inside the current deployment (PATH mode).

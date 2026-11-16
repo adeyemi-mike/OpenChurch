@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { requireChurchContext } from '@/lib/auth/guards'
 import { can } from '@/lib/permissions'
 import { DomainsManager } from '@/components/dashboard/domains-manager'
-import { churchBaseUrl } from '@/lib/tenancy/resolver'
+import { churchPlatformAddresses } from '@/lib/tenancy/resolver'
 
 export const metadata: Metadata = {
   title: 'Custom Domains',
@@ -25,11 +25,14 @@ export default async function DomainsPage({ params }: { params: Promise<{ slug: 
     )
   }
 
+  const addresses = churchPlatformAddresses(ctx.church.slug)
+
   return (
     <DomainsManager
       slug={ctx.church.slug}
       role={ctx.role}
-      platformUrl={churchBaseUrl(ctx.church.slug)}
+      platformUrl={addresses.pathUrl}
+      subdomainUrl={addresses.subdomainUrl}
       churchName={ctx.church.name}
     />
   )

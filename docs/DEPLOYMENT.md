@@ -104,6 +104,8 @@ Notes and honest limits:
 | `VERCEL_PROJECT_ID` | managed hosting, automated domains | Vercel project the domains are attached to |
 | `VERCEL_TEAM_ID` | no | Vercel team scope, when the project belongs to a team |
 | `CUSTOM_DOMAIN_MODE` | no (auto-derived) | Operator override for hosts the platform cannot auto-detect: `auto` (requires the provider variables above), `manual` (self-hosted workflow), `off` (domains unavailable) — see "Custom domains" below |
+| `DOMAIN_LIMIT_FREE` / `DOMAIN_LIMIT_PAID` / `DOMAIN_LIMIT_PREMIUM` | no (0 / 1 / 10) | Custom-domain limits per subscription plan — see "Domain plans & limits" |
+| `CRON_SECRET` | recommended on managed hosting | Bearer secret required by the scheduled domain recheck (`GET /api/cron/domains`); Vercel Cron injects it automatically |
 
 Optional integrations (none required; see `.env.example`): Paystack/Stripe keys for future direct integrations, SMTP for email, analytics.
 
@@ -129,10 +131,55 @@ explicitly; `auto` is honoured only when the provider variables are actually
 configured — an auto declaration without credentials never pretends that
 automation exists.
 
-**Dashboard workflow** (owners and admins, Dashboard → Custom Domains):
+### Operator setup — once per deployment
+
+Managed hosting (Vercel):
+
+1. Create a Vercel API token with scope over the project
+   (Project → Settings → Domains shows what the integration will do).
+2. Set **server-side** environment variables on the deployment:
+   `VERCEL_TOKEN`, `VERCEL_PROJECT_ID` (from the project settings page) and,
+   when the project belongs to a team, `VERCEL_TEAM_ID`. These are never
+   exposed to the browser — only the boolean "integration configured" is.
+3. Optionally set `CRON_SECRET` (e.g. `openssl rand -hex 24`). Vercel Cron
+   (see below) then authenticates automatically.
+4. Nothing else: every church — existing and future — can now connect its
+   own domains from its dashboard. The operator never configures churches
+   individually.
+
+While the variables are unset, the platform reports managed custom domains
+as **unavailable** (dashboard notice + `DOMAINS_UNAVAILABLE` API errors +
+an explicit "not configured" panel in `/admin`) — it never implies the
+feature works.
+
+Optional subdomain addressing (`<slug>.<your-root-domain>` for every
+church): set `PLATFORM_ROOT_DOMAIN`, attach the wildcard domain to the
+Vercel project with `bun scripts/vercel-wildcard.ts`, and create the
+wildcard DNS record at your registrar (`*.<root>` CNAME `cname.vercel-dns.com`
+or A `76.76.21.21`). The script prints these steps honestly and is
+idempotent. Wildcard TLS on Vercel covers `*.your-root-domain` automatically
+once DNS propagates.
+
+Self-hosted installations: see "HOST mode" below — the provider abstraction
+is designed so Vercel is NOT a permanent dependency (`src/lib/domains/provider.ts`
+defines the adapter interface; a new provider implements three methods).
+
+### What every church automatically receives
+
+Registering a church provisions its tenant atomically (onboarding wizard) and
+with it a working **platform address** `https://<your-host>/church/<slug>`
+— no operator action, no DNS work, valid immediately. Slug collisions and
+reserved names (`www`, `api`, `admin`, …) are rejected at creation, and one
+church can never claim another church's slug or hostname (both are globally
+unique). On deployments with the wildcard setup above, the subdomain address
+`https://<slug>.<root>` resolves to the same church automatically.
+
+### Dashboard workflow (owners and admins, Dashboard → Custom Domains)
 
 1. **Add domain** — validated and normalised (no IPs, localhost, ports,
-   hosting-platform suffixes, or the platform's own hosts).
+   hosting-platform suffixes, or the platform's own hosts). Apex, www and
+   subdomains are all supported; adding `www.` suggests the apex companion
+   (and vice versa) — each hostname is verified independently.
 2. **Verify ownership** — a unique TXT record
    (`_openchurch-verify.<domain>` → `openchurch-verify=<token>`) checked by a
    server-side DNS lookup. Tokens are 256-bit random values stored only as
@@ -140,38 +187,85 @@ automation exists.
    never verified by clicking a button.
 3. **Connect hosting**:
    - **Managed hosting, automated**: the platform adds the domain to the
-     provider project, shows the provider's required DNS records (A for
-     apexes, CNAME for subdomains, per the provider's own response — never
-     hardcoded), and reflects the provider's status; SSL provisioning is
-     reported as such, never claimed as done.
+     provider project, shows the provider's required DNS records (from the
+     provider's own `suggestedValues` response — never hardcoded), and
+     tracks the lifecycle below.
    - **Self-hosted, manual**: the dashboard shows DNS instructions; the
      owner points the domain at the server, configures the reverse proxy
      (below), and confirms. Status is labelled "owner-confirmed".
-4. **Set primary** — canonical URLs, sitemap URLs and Open Graph links use
-   the primary domain; the platform slug route keeps working (and canonicals
-   point at the primary domain, so the two URLs never compete in search).
+4. **Check status** — re-runs the provider inspection and an HTTPS probe.
+   This is the retry path: failed verifications and failed provider
+   assignments can be retried safely at any step.
+5. **Set primary** — canonical URLs, sitemap URLs and Open Graph links use
+   the primary domain; the platform slug route keeps working, and requests
+   on the church's other ACTIVE domains redirect (308) to the primary —
+   so `gracecommunity.org` and `www.gracecommunity.org` never compete.
 
-On a serverless deployment without the integration, the dashboard replaces
-the add-form and workflow steps with this explanation, and the server-side
-service refuses domain mutations with a clear error (`DOMAINS_UNAVAILABLE`) —
-defence in depth, so a stale client cannot bypass the UI. Listing and removal
-remain available for any pre-existing rows.
+### Domain lifecycle statuses
 
-**Security properties**: a hostname can only belong to one church (DB unique
-constraint + claim-race handling); expired pending claims are reclaimable,
-verified domains never transfer; removal detaches hosting and stops
-resolution; every change is audited.
+| Status | Meaning | Serves traffic? |
+| --- | --- | --- |
+| `PENDING` | Added; awaiting TXT ownership verification | no |
+| `VERIFICATION_FAILED` | Last ownership check failed (retry or regenerate the token) | no |
+| `VERIFIED` | Ownership proven; awaiting hosting assignment | no |
+| `PENDING_DNS` | Attached to the provider; DNS not confirmed yet | no |
+| `PENDING_SSL` | Provider confirms DNS; SSL/HTTPS not live yet | no |
+| `ACTIVE` | Ownership + assignment + DNS + HTTPS all confirmed | **yes** |
+| `FAILED` | The provider lost/never completed the assignment — retry | no |
+| `SUSPENDED` | Suspended by the platform operator (kill-switch in `/admin`) | no |
+| *(removed)* | Row deleted; the audit log retains the full history | no |
 
-**Resolution & caching**: requests on a verified+ACTIVE domain are rewritten
-to the church route in `src/proxy.ts` (Next.js 16 proxy, Node runtime).
-Host→tenant lookups are cached for 60s per instance INCLUDING negative
-results — a removed domain can therefore resolve for at most ~60s on
-instances that missed the invalidation (relevant on multi-instance
-serverless deployments).
+`ACTIVE` is set only from provider confirmation plus a successful HTTPS
+probe (any HTTP response proves the certificate is live). A provider that
+reports the domain missing **downgrades an ACTIVE row to `FAILED`**
+immediately — provider failures never leave misleading active records.
+
+### Background rechecks
+
+- **Dashboard**: loading the Custom Domains page re-checks up to two
+  provider-assigned domains whose last check is older than 5 minutes.
+- **Scheduled**: `vercel.json` registers a cron job on
+  `GET /api/cron/domains` (hourly on Vercel Pro; **the Hobby plan only runs
+  cron jobs once a day**, so interactive rechecks are the primary path
+  there). The endpoint re-checks up to 25 stale domains per run, protected
+  by `CRON_SECRET` when set. Self-hosted operators can call it from their
+  own scheduler: `curl -H "Authorization: Bearer $CRON_SECRET"
+  https://your-host/api/cron/domains`.
+- **Cache safety**: host→tenant lookups are cached for 60s per instance
+  INCLUDING negative results — a removed or downgraded domain stops
+  resolving within a minute even on instances that missed the invalidation.
+
+### Domain plans & limits
+
+Custom-domain access is controlled per church by a subscription plan
+(`free` | `paid` | `premium`, set by the platform operator in `/admin`).
+OpenChurch ships **no billing system and no hardcoded pricing** — the
+entitlement interface (`src/lib/domains/entitlements.ts`) is deliberately
+narrow so a future billing integration only has to write `Church.plan`.
+
+- Limits are operator-configured via `DOMAIN_LIMIT_FREE` (default **0** —
+  platform address only), `DOMAIN_LIMIT_PAID` (default **1**) and
+  `DOMAIN_LIMIT_PREMIUM` (default **10**).
+- Enforcement is server-side (`PLAN_LIMIT` errors); the dashboard shows the
+  church's plan and used/limit count.
+- The `/admin` churches table has a plan selector per church; every change
+  is audited.
+
+### Security properties
+
+A hostname can only belong to one church (DB unique constraint +
+claim-race handling); expired pending claims are reclaimable, verified
+domains never transfer; ownership verification cannot be bypassed (DNS TXT
+checked server-side, token stored as a hash); unverified domains never
+serve tenant content; provider credentials stay server-side; domain
+operations are audited and rate-limited; DNS/hostname inputs are strictly
+validated; removal detaches hosting and stops resolution; the resolver
+ignores `X-Forwarded-Host` from untrusted sources (host-header injection
+is impossible); and one church's host can never resolve for another.
 
 **DNS records the church adds** (its own registrar):
 - `_openchurch-verify.<domain>` TXT `openchurch-verify=<token>` (ownership)
-- the hosting record the provider reports (e.g. Vercel CNAME/A), displayed
+- the hosting records the provider reports (e.g. Vercel CNAME/A), displayed
   by the dashboard with copy buttons.
 
 ## Church URL routing
@@ -186,16 +280,19 @@ For `grace.openchurch.example` or `www.gracecommunity.org`:
 
 1. Set `DEPLOYMENT_MODE=HOST` and `PLATFORM_ROOT_DOMAIN=openchurch.example`.
 2. Add a wildcard DNS record `*.openchurch.example` → your server.
-3. Configure your reverse proxy to forward **all** hosts to the app (the Host header is preserved).
+3. Configure your reverse proxy to forward **all** hosts to the app (the Host header is preserved), with a wildcard TLS certificate for your root domain.
 4. The resolver (`src/lib/tenancy/resolver.ts`) maps the Host header to a church:
    - custom domain → exact match in `church_domains` (only `ACTIVE` domains resolve)
-   - subdomain of your root domain → church slug
+   - subdomain of your root domain → church slug (reserved names excluded)
+   - requests on a church's ACTIVE non-primary domain → 308 redirect to the primary domain
 
 **Honest status:** host resolution, TXT ownership verification and the full
 `church_domains` lifecycle are implemented (see "Custom domains" above).
-Subdomain mode additionally expects the wildcard DNS record above. For a
-single-church installation you can alternatively point your domain at the app
-and treat the church as the only tenant.
+Subdomain mode additionally expects the wildcard DNS record above — on Vercel,
+`bun scripts/vercel-wildcard.ts` attaches the wildcard to the project for you
+(the DNS record itself is created at your registrar). For a single-church
+installation you can alternatively point your domain at the app and treat the
+church as the only tenant.
 
 ## Managed-platform operations
 
