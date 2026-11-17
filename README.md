@@ -7,7 +7,7 @@ OpenChurch is a free, open-source platform that gives any church — in any coun
 Multi-tenancy is built into the core, not bolted on: one installation serves a single church or a growing network, with strict data isolation and role-based permissions enforced on the server.
 
 ```bash
-git clone <repo> openchurch && cd openchurch
+git clone https://github.com/adeyemi-mike/OpenChurch.git openchurch && cd openchurch
 bun install
 cp .env.example .env
 bun run db:push && bun run db:seed

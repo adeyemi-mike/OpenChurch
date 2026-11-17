@@ -18,15 +18,18 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HeroMockup } from '@/components/platform/hero-mockup'
+import { ProfessionalServices } from '@/components/platform/professional-services'
 import { OpenChurchMark } from '@/components/platform/brand'
-import { PillarsConnectServices } from '@/components/platform/pillarsconnect-services'
 import { THEMES } from '@/lib/themes/registry'
 import { getSessionUser } from '@/lib/auth/session'
 import { isDemoModeEnabled, DEMO_PASSWORD_HINT } from '@/lib/demo-mode'
 import { db } from '@/lib/db'
 
-// Public repository link (set NEXT_PUBLIC_REPO_URL when the project is published).
-const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || null
+// Public repository link. The official OpenChurch repository is the default;
+// self-hosters and forks override it with NEXT_PUBLIC_REPO_URL.
+const REPO_URL =
+  process.env.NEXT_PUBLIC_REPO_URL || 'https://github.com/adeyemi-mike/OpenChurch'
+const INSTALLATION_URL = `${REPO_URL}/blob/main/docs/INSTALLATION.md`
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +44,7 @@ export const metadata: Metadata = {
     absolute: 'OpenChurch — Every Church Deserves a Digital Home',
   },
   description:
-    'Open-source, denomination-neutral church website platform. Build, customise and publish a professional church website with pages, sermons, events, giving and more — no coding required.',
+    'Complete, free and open-source church website software. Build, customise and deploy your own church website with full control of your code and infrastructure.',
   alternates: {
     canonical: '/',
   },
@@ -51,7 +54,7 @@ export const metadata: Metadata = {
     siteName: 'OpenChurch',
     title: 'OpenChurch — Every Church Deserves a Digital Home',
     description:
-      'Open-source church website platform: a no-code page builder, themes, sermons, events, giving and multi-church management — free and open source.',
+      'Complete, free and open-source church website software. Build, customise and deploy your own church website with full control of your code and infrastructure.',
     images: [
       {
         url: '/og-default.png',
@@ -65,7 +68,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'OpenChurch — Every Church Deserves a Digital Home',
     description:
-      'Open-source church website platform: no-code builder, themes, sermons, events and giving. Every church deserves a digital home.',
+      'Complete, free and open-source church website software. Build, customise and deploy your own church website with full control of your code and infrastructure.',
     images: ['/og-default.png'],
   },
 }
@@ -157,8 +160,6 @@ export default async function LandingPage() {
     where: {
       isPublished: true,
       status: 'ACTIVE',
-      // These tenant sites should not be promoted in the public homepage showcase.
-      slug: { notIn: ['csmc', 'cac-parakin'] },
       // Never advertise demo tenants on a deployment that disabled demo mode.
       ...(demoMode ? {} : { isDemo: false }),
     },
@@ -473,7 +474,7 @@ export default async function LandingPage() {
                 <p className="mt-4 text-primary-foreground/80 leading-relaxed">
                   OpenChurch is licensed under MIT. Download it, self-host it on a €4 VPS or your
                   denomination’s servers, customise it, and keep your data — with no subscription
-                  and no lock-in. You choose and manage the infrastructure where it runs.
+                  and no lock-in. Managed hosting is optional, never required.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
                   <Button asChild size="lg" variant="secondary">
@@ -483,17 +484,21 @@ export default async function LandingPage() {
                     asChild
                     size="lg"
                     variant="outline"
-                    className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                    className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
                   >
-                    {REPO_URL ? (
-                      <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
-                        <Github className="size-4" aria-hidden /> Read the source
-                      </a>
-                    ) : (
-                      <Link href="/license">
-                        <Github className="size-4" aria-hidden /> Open source, MIT licensed
-                      </Link>
-                    )}
+                    <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
+                      <Github className="size-4" aria-hidden /> View Source Code
+                    </a>
+                  </Button>
+                  <Button
+                    asChild
+                    size="lg"
+                    variant="ghost"
+                    className="text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                  >
+                    <a href={INSTALLATION_URL} target="_blank" rel="noopener noreferrer">
+                      Read the Installation Guide
+                    </a>
                   </Button>
                 </div>
               </div>
@@ -516,7 +521,9 @@ export default async function LandingPage() {
           </div>
         </section>
 
-        <PillarsConnectServices />
+        {/* Optional professional services by PillarsConnect Ltd — the software
+            stays free and self-hostable; services are strictly optional. */}
+        <ProfessionalServices />
       </main>
 
       {/* Footer (sticky) */}
@@ -531,6 +538,8 @@ export default async function LandingPage() {
           <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground" aria-label="Footer">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             {hasShowcase && <a href="#demo" className="hover:text-foreground transition-colors">Live site{showcase.length > 1 ? 's' : ''}</a>}
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Source code</a>
+            <a href={INSTALLATION_URL} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Installation guide</a>
             <Link href="/login" className="hover:text-foreground transition-colors">Sign in</Link>
             <Link href="/register" className="hover:text-foreground transition-colors">Get started</Link>
             {showcase.map((s) => (
@@ -538,14 +547,24 @@ export default async function LandingPage() {
             ))}
           </nav>
           <p className="text-xs text-muted-foreground">
-            <Link href="#professional-services" className="hover:text-foreground underline underline-offset-2">
-              Need help with setup or a website? Get optional professional assistance from PillarsConnect Ltd.
-            </Link>
-            <span className="mx-2" aria-hidden="true">·</span>
             <Link href="/license" className="hover:text-foreground transition-colors underline underline-offset-2">
               MIT licensed
             </Link>{' '}
             · Built for the global church
+          </p>
+        </div>
+        {/* Compact professional assistance link — secondary placement for the
+            optional PillarsConnect services (full section lives on the homepage). */}
+        <div className="border-t">
+          <p className="mx-auto max-w-6xl px-4 sm:px-6 py-4 text-center text-xs text-muted-foreground">
+            Need help with OpenChurch setup, custom domains or a new website?{' '}
+            <a
+              href="#professional-services"
+              className="underline underline-offset-2 hover:text-foreground transition-colors"
+            >
+              Get professional assistance from PillarsConnect Ltd
+            </a>
+            .
           </p>
         </div>
       </footer>

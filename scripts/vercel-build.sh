@@ -23,7 +23,10 @@
 #   DATABASE_URL      pooled/runtime connection string. Set automatically by
 #                     the Vercel Storage → Neon integration (PgBouncer-ready),
 #                     or paste a Neon "-pooler" URL with &pgbouncer=true
-#   NEXT_PUBLIC_APP_URL  canonical public origin (https://…)
+#   NEXT_PUBLIC_SITE_URL  canonical public origin (https://…) — REQUIRED for
+#                     this project. NEXT_PUBLIC_* values are inlined at build
+#                     time, so set it in Vercel → Settings → Environment
+#                     Variables before building, not only at runtime.
 #   DEMO_MODE         must be "false" or unset on a real instance
 #   DIRECT_URL        optional — only needed for pooled URLs on hosts that
 #                     do not set DATABASE_URL_UNPOOLED

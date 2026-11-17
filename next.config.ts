@@ -1,7 +1,26 @@
 import type { NextConfig } from "next";
 
+// Canonical public origin of the official demonstration deployment.
+// Kept in sync with NEXT_PUBLIC_SITE_URL on the hosting platform.
+const CANONICAL_ORIGIN = "https://openchurch.pillarsconnect.online";
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Permanent redirect from the project's previous vercel.app address to the
+  // canonical branded domain. Host-conditioned, so it can never loop: the
+  // canonical domain (and every other host — preview deployments, localhost,
+  // self-hosted domains) is untouched. If the old address no longer reaches
+  // this deployment the rule is simply inert.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "open-church-one.vercel.app" }],
+        destination: `${CANONICAL_ORIGIN}/:path*`,
+        permanent: true,
+      },
+    ];
+  },
   // Allow the sandbox preview proxy origin to load /_next/* dev resources
   // (Next.js 16 requires explicit opt-in for non-localhost dev origins).
   allowedDevOrigins: ["*.space-z.ai"],
