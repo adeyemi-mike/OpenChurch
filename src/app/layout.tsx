@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { ClientErrorReporter } from "@/components/dev/client-error-reporter";
 import { getPublicOrigin } from "@/lib/url";
+import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -66,6 +67,7 @@ export default function RootLayout({
         <ClientErrorReporter />
         <Toaster />
         <Sonner position="top-right" />
+        <Analytics />
       </body>
     </html>
   );
