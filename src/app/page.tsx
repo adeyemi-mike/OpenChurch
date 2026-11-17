@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import {
-  Church,
   LayoutTemplate,
   Palette,
   Building2,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HeroMockup } from '@/components/platform/hero-mockup'
+import { OpenChurchMark } from '@/components/platform/brand'
 import { PillarsConnectServices } from '@/components/platform/pillarsconnect-services'
 import { THEMES } from '@/lib/themes/registry'
 import { getSessionUser } from '@/lib/auth/session'
@@ -205,11 +205,11 @@ export default async function LandingPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-            <span className="grid place-items-center size-9 rounded-xl bg-primary text-primary-foreground">
-              <Church className="size-4.5" aria-hidden />
+          <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight" aria-label="OpenChurch home">
+            <OpenChurchMark className="size-9 text-primary" />
+            <span className="text-lg">
+              <span className="font-bold text-primary">Open</span>Church
             </span>
-            <span className="text-lg">OpenChurch</span>
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground" aria-label="Main">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
@@ -523,10 +523,10 @@ export default async function LandingPage() {
       <footer className="mt-auto border-t bg-background">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2.5 font-semibold">
-            <span className="grid place-items-center size-8 rounded-lg bg-primary text-primary-foreground">
-              <Church className="size-4" aria-hidden />
+            <OpenChurchMark className="size-8 text-primary" />
+            <span>
+              <span className="font-bold text-primary">Open</span>Church
             </span>
-            OpenChurch
           </div>
           <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground" aria-label="Footer">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
@@ -552,4 +552,3 @@ export default async function LandingPage() {
     </div>
   )
 }
-

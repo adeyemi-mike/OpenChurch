@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { Church } from 'lucide-react'
+import { OpenChurchLogo } from '@/components/platform/brand'
 
 /** Shared shell for the platform's auth pages. */
 export function AuthShell({
@@ -18,11 +18,8 @@ export function AuthShell({
     <div className="min-h-screen flex flex-col bg-muted/40">
       <header className="border-b bg-background">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 font-semibold text-primary">
-            <span className="grid place-items-center size-8 rounded-lg bg-primary text-primary-foreground">
-              <Church className="size-4" aria-hidden />
-            </span>
-            OpenChurch
+          <Link href="/" aria-label="OpenChurch home">
+            <OpenChurchLogo />
           </Link>
           <Link
             href="/"

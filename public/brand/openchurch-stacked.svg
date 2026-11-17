@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 300" role="img" aria-labelledby="title desc">
+  <title id="title">OpenChurch stacked logo</title>
+  <desc id="desc">The abstract open portal symbol above the OpenChurch wordmark.</desc>
+  <g transform="translate(154 22) scale(1.02)" fill="none" stroke="#1B5142" stroke-width="13" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M91 22H45C31 22 22 31 22 45V69C22 83 31 92 45 92H60"/>
+    <path d="M91 22V55L70 76"/>
+  </g>
+  <text x="210" y="242" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="57" letter-spacing="-2.4">
+    <tspan font-weight="700" fill="#1B5142">Open</tspan><tspan font-weight="600" fill="#252B29">Church</tspan>
+  </text>
+</svg>

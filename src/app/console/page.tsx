@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { Church, Plus, ArrowRight, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { OpenChurchLogo } from '@/components/platform/brand'
 import { requireUser, getUserMemberships } from '@/lib/auth/guards'
 
 export const metadata = { title: 'Your churches', robots: { index: false } }
@@ -25,11 +26,8 @@ export default async function DashboardPickerPage({
     <div className="min-h-screen flex flex-col bg-muted/30">
       <header className="border-b bg-background">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 font-semibold text-primary">
-            <span className="grid place-items-center size-8 rounded-lg bg-primary text-primary-foreground">
-              <Church className="size-4" aria-hidden />
-            </span>
-            OpenChurch
+          <Link href="/" aria-label="OpenChurch home">
+            <OpenChurchLogo />
           </Link>
           {user.isPlatformAdmin ? (
             <Button asChild variant="outline" size="sm">

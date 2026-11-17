@@ -1,5 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="22" fill="#0F5C4E"/>
-  <rect x="46" y="20" width="8" height="58" rx="3" fill="#F2B366"/>
-  <rect x="29" y="38" width="42" height="8" rx="3" fill="#F2B366"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112">
+  <title>OpenChurch</title>
+  <!-- Brand mark (public/brand/openchurch-icon.svg). Deep green on light
+       browser chrome; warm off-white when the browser UI is dark. -->
+  <style>
+    path { stroke: #1B5142; }
+    @media (prefers-color-scheme: dark) { path { stroke: #FEFDFB; } }
+  </style>
+  <g fill="none" stroke-width="13" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M91 22H45C31 22 22 31 22 45V69C22 83 31 92 45 92H60"/>
+    <path d="M91 22V55L70 76"/>
+  </g>
 </svg>

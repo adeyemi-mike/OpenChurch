@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112" role="img" aria-labelledby="title desc">
+  <title id="title">OpenChurch icon</title>
+  <desc id="desc">Abstract geometric open portal symbol.</desc>
+  <g fill="none" stroke="#1B5142" stroke-width="13" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M91 22H45C31 22 22 31 22 45V69C22 83 31 92 45 92H60"/>
+    <path d="M91 22V55L70 76"/>
+  </g>
+</svg>

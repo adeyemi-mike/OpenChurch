@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Church, LayoutDashboard } from 'lucide-react'
+import { LayoutDashboard } from 'lucide-react'
+import { OpenChurchMark } from '@/components/platform/brand'
 import { Button } from '@/components/ui/button'
 import { getSessionUser } from '@/lib/auth/session'
 import { PlatformSignOutButton } from '@/components/dashboard/admin-console'
@@ -25,10 +26,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             className="flex min-w-0 items-center gap-2.5 font-semibold"
             aria-label="OpenChurch platform administration home"
           >
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
-              <Church className="size-4" aria-hidden />
+            <OpenChurchMark className="size-8 text-primary" />
+            <span className="truncate">
+              <span className="font-bold text-primary">Open</span>Church Platform Administration
             </span>
-            <span className="truncate">OpenChurch Platform Administration</span>
           </Link>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm">

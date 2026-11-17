@@ -4,7 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  Church,
   LayoutDashboard,
   Files,
   Palette,
@@ -30,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/client/api'
 import type { ChurchRole } from '@/lib/permissions'
+import { OpenChurchMark } from '@/components/platform/brand'
 
 export type NavItemDef = {
   href: string
@@ -116,7 +116,7 @@ export function DashboardSidebar({
       {/* Brand / church */}
       <div className="p-4 border-b border-sidebar-border">
         <Link href="/console" className="flex items-center gap-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors">
-          <Church className="size-3.5" aria-hidden /> OpenChurch
+          <OpenChurchMark className="size-3.5" /> OpenChurch
         </Link>
         <p className="mt-2 font-semibold leading-snug">{churchName}</p>
         <p className="mt-0.5 inline-flex items-center gap-1.5 text-xs text-sidebar-foreground/60">
