@@ -542,9 +542,6 @@ export default async function LandingPage() {
             <a href={INSTALLATION_URL} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Installation guide</a>
             <Link href="/login" className="hover:text-foreground transition-colors">Sign in</Link>
             <Link href="/register" className="hover:text-foreground transition-colors">Get started</Link>
-            {showcase.map((s) => (
-              <Link key={s.href} href={s.href} className="hover:text-foreground transition-colors">{s.name}</Link>
-            ))}
           </nav>
           <p className="text-xs text-muted-foreground">
             <Link href="/license" className="hover:text-foreground transition-colors underline underline-offset-2">
@@ -571,3 +568,4 @@ export default async function LandingPage() {
     </div>
   )
 }
+warning: in the working copy of 'src/app/page.tsx', LF will be replaced by CRLF the next time Git touches it
