@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HeroMockup } from '@/components/platform/hero-mockup'
+import { PillarsConnectServices } from '@/components/platform/pillarsconnect-services'
 import { THEMES } from '@/lib/themes/registry'
 import { getSessionUser } from '@/lib/auth/session'
 import { isDemoModeEnabled, DEMO_PASSWORD_HINT } from '@/lib/demo-mode'
@@ -156,6 +157,8 @@ export default async function LandingPage() {
     where: {
       isPublished: true,
       status: 'ACTIVE',
+      // These tenant sites should not be promoted in the public homepage showcase.
+      slug: { notIn: ['csmc', 'cac-parakin'] },
       // Never advertise demo tenants on a deployment that disabled demo mode.
       ...(demoMode ? {} : { isDemo: false }),
     },
@@ -470,7 +473,7 @@ export default async function LandingPage() {
                 <p className="mt-4 text-primary-foreground/80 leading-relaxed">
                   OpenChurch is licensed under MIT. Download it, self-host it on a €4 VPS or your
                   denomination’s servers, customise it, and keep your data — with no subscription
-                  and no lock-in. Managed hosting is optional, never required.
+                  and no lock-in. You choose and manage the infrastructure where it runs.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
                   <Button asChild size="lg" variant="secondary">
@@ -480,7 +483,7 @@ export default async function LandingPage() {
                     asChild
                     size="lg"
                     variant="outline"
-                    className="border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                    className="border-primary-foreground/40 bg-transparent text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"
                   >
                     {REPO_URL ? (
                       <a href={REPO_URL} target="_blank" rel="noopener noreferrer">
@@ -512,6 +515,8 @@ export default async function LandingPage() {
             </div>
           </div>
         </section>
+
+        <PillarsConnectServices />
       </main>
 
       {/* Footer (sticky) */}
@@ -533,6 +538,10 @@ export default async function LandingPage() {
             ))}
           </nav>
           <p className="text-xs text-muted-foreground">
+            <Link href="#professional-services" className="hover:text-foreground underline underline-offset-2">
+              Need help with setup or a website? Get optional professional assistance from PillarsConnect Ltd.
+            </Link>
+            <span className="mx-2" aria-hidden="true">·</span>
             <Link href="/license" className="hover:text-foreground transition-colors underline underline-offset-2">
               MIT licensed
             </Link>{' '}
@@ -543,3 +552,4 @@ export default async function LandingPage() {
     </div>
   )
 }
+
